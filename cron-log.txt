@@ -1,0 +1,59 @@
+==================================
+Running at: Sat Dec  6 22:59:22 CET 2025
+/Users/irma/Desktop/slowbuild/estirarconnect/send-daily-messages-local.sh: line 14: /usr/local/bin/node: No such file or directory
+Completed at: Sat Dec  6 22:59:22 CET 2025
+==================================
+Running at: Sat Dec  6 22:59:50 CET 2025
+WhatsApp API Error: {
+  error: {
+    message: '(#131030) Recipient phone number not in allowed list',
+    type: 'OAuthException',
+    code: 131030,
+    error_data: {
+      messaging_product: 'whatsapp',
+      details: 'Recipient phone number not in allowed list: Add recipient phone number to recipient list and try again.'
+    },
+    fbtrace_id: 'AC4Awpy77r_01H90AtGno49'
+  }
+}
+Message failed to +1234567890: Chair Yoga for Seniors - 15 Minutes
+WhatsApp API Error: {
+  error: {
+    message: '(#131030) Recipient phone number not in allowed list',
+    type: 'OAuthException',
+    code: 131030,
+    error_data: {
+      messaging_product: 'whatsapp',
+      details: 'Recipient phone number not in allowed list: Add recipient phone number to recipient list and try again.'
+    },
+    fbtrace_id: 'AFnYRQEx6cD67pLr4-EJjjq'
+  }
+}
+Message failed to +1234567891: Ejercicios en Silla #2
+Message sent to +13055629885: Ejercicios en Silla #2
+Error in sendDailyMessages: TypeError: res.json is not a function
+    at sendDailyMessages (file:///Users/irma/Desktop/slowbuild/estirarconnect/backend/src/controllers/messageController.js:65:16)
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+Status: 500
+Response: {
+  "success": false,
+  "error": "res.json is not a function"
+}
+Completed at: Sat Dec  6 22:59:55 CET 2025
+==================================
+Running at: Sat Dec  6 23:00:40 CET 2025
+Message sent to +13055629885: Ejercicios en Silla #3
+Response: {
+  "success": true,
+  "message": "Processed 1 messages",
+  "results": [
+    {
+      "seniorId": "17ff3c8c-f33e-4d02-9d6a-0008f67972a6",
+      "phoneNumber": "+13055629885",
+      "videoTitle": "Ejercicios en Silla #3",
+      "success": true,
+      "messageId": "wamid.HBgLMTMwNTU2Mjk4ODUVAgARGBI2MUQ0MTlDNzc3QjdEQ0EyREQA"
+    }
+  ]
+}
+Completed at: Sat Dec  6 23:00:42 CET 2025

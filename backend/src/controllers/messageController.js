@@ -1,5 +1,5 @@
 import { getActiveSeniors, getNextVideoForSenior, logMessageSent } from '../services/database.js';
-import { sendWhatsAppMessage, formatVideoMessage } from '../services/whatsapp.js';
+import { sendWhatsAppMessage, sendWhatsAppTemplateMessage, formatVideoMessage } from '../services/whatsapp.js';
 
 export async function sendDailyMessages(req, res) {
   try {
@@ -31,11 +31,14 @@ export async function sendDailyMessages(req, res) {
           continue;
         }
 
-        // Format the message
-        const message = formatVideoMessage(video, senior.language);
-
-        // Send WhatsApp message
-        const result = await sendWhatsAppMessage(senior.phone_number, message);
+        // Send WhatsApp template message (bypasses 24-hour window)
+        const templateName = process.env.WHATSAPP_TEMPLATE_NAME || 'chair_exercise_reminder';
+        const result = await sendWhatsAppTemplateMessage(
+          senior.phone_number,
+          templateName,
+          video,
+          senior.language
+        );
 
         // Log the send attempt
         const status = result.success ? 'sent' : 'failed';

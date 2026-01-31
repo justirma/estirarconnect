@@ -95,7 +95,7 @@ export async function logMessageSent(seniorId, videoId, status = 'sent') {
   return data;
 }
 
-export async function logReply(seniorId, replyText) {
+export async function logReply(seniorId, replyText, isCompletion = false) {
   // Find the most recent log entry for this senior
   const { data: lastLog } = await supabase
     .from('logs')
@@ -111,12 +111,18 @@ export async function logReply(seniorId, replyText) {
     return null;
   }
 
+  const updateData = {
+    reply_text: replyText,
+    replied_at: new Date().toISOString()
+  };
+
+  if (isCompletion) {
+    updateData.completed = true;
+  }
+
   const { data, error } = await supabase
     .from('logs')
-    .update({
-      reply_text: replyText,
-      replied_at: new Date().toISOString()
-    })
+    .update(updateData)
     .eq('id', lastLog.id)
     .select()
     .single();
@@ -127,6 +133,27 @@ export async function logReply(seniorId, replyText) {
   }
 
   return data;
+}
+
+export async function getCompletionStreak(seniorId) {
+  const { data, error } = await supabase
+    .from('logs')
+    .select('completed, sent_at')
+    .eq('senior_id', seniorId)
+    .order('sent_at', { ascending: false })
+    .limit(30);
+
+  if (error || !data) return 0;
+
+  let streak = 0;
+  for (const log of data) {
+    if (log.completed) {
+      streak++;
+    } else {
+      break;
+    }
+  }
+  return streak;
 }
 
 export async function getAllVideos() {

@@ -1,5 +1,27 @@
-import { verifyWebhook, parseIncomingMessage } from '../services/whatsapp.js';
-import { getSeniorByPhone, logReply } from '../services/database.js';
+import { verifyWebhook, parseIncomingMessage, sendWhatsAppMessage } from '../services/whatsapp.js';
+import { getSeniorByPhone, logReply, getCompletionStreak } from '../services/database.js';
+
+const COMPLETION_KEYWORDS = ['done', 'fin', 'listo', 'lista', 'complete', 'completed', 'hecho'];
+
+function isCompletion(text) {
+  return COMPLETION_KEYWORDS.includes(text.toLowerCase().trim());
+}
+
+function getCompletionMessage(language, streak) {
+  if (language === 'es') {
+    let msg = '¡Buen trabajo! 💪 Completaste el ejercicio de hoy.';
+    if (streak >= 3) {
+      msg += `\n\n🔥 ¡${streak} días seguidos! ¡Sigue así!`;
+    }
+    return msg;
+  }
+
+  let msg = 'Great job! 💪 You completed today\'s exercise.';
+  if (streak >= 3) {
+    msg += `\n\n🔥 ${streak} days in a row! Keep it up!`;
+  }
+  return msg;
+}
 
 export async function handleWebhookVerification(req, res) {
   const mode = req.query['hub.mode'];
@@ -33,11 +55,21 @@ export async function handleIncomingMessage(req, res) {
       return res.sendStatus(200);
     }
 
-    // Log the reply
     const replyText = messageData.text.trim();
-    await logReply(senior.id, replyText);
+    const completed = isCompletion(replyText);
 
-    console.log(`Reply logged for senior ${senior.id}: ${replyText}`);
+    // Log the reply (with completion flag if applicable)
+    await logReply(senior.id, replyText, completed);
+
+    // Send acknowledgment if they completed the exercise
+    if (completed) {
+      const streak = await getCompletionStreak(senior.id);
+      const message = getCompletionMessage(senior.language, streak);
+      await sendWhatsAppMessage(senior.phone_number, message);
+      console.log(`Completion logged for senior ${senior.id} (streak: ${streak})`);
+    } else {
+      console.log(`Reply logged for senior ${senior.id}: ${replyText}`);
+    }
 
     return res.sendStatus(200);
   } catch (error) {

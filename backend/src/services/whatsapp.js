@@ -51,7 +51,7 @@ export async function sendWhatsAppTemplateMessage(phoneNumber, templateName, vid
         template: {
           name: templateName,
           language: {
-            code: language === 'es' ? 'es_PA' : 'en_US'
+            code: language === 'es' ? 'es_PA' : 'en'
           },
           components: [
             {

@@ -32,7 +32,9 @@ export async function sendDailyMessages(req, res) {
         }
 
         // Send WhatsApp template message (bypasses 24-hour window)
-        const templateName = process.env.WHATSAPP_TEMPLATE_NAME || 'chair_exercise_reminder';
+        const templateName = senior.language === 'es'
+          ? (process.env.WHATSAPP_TEMPLATE_NAME_ES || 'actualizacion_sesion_diaria')
+          : (process.env.WHATSAPP_TEMPLATE_NAME_EN || 'daily_exercise_update');
         const result = await sendWhatsAppTemplateMessage(
           senior.phone_number,
           templateName,

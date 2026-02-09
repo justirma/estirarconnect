@@ -31,7 +31,7 @@ export async function getSeniorByPhone(phoneNumber) {
 
 export async function getNextVideoForSenior(seniorId, language) {
   // Get the last video sent to this senior
-  const { data: lastLog } = await supabase
+  const { data: lastLog, error: lastLogError } = await supabase
     .from('logs')
     .select('video_id, videos(sequence_order)')
     .eq('senior_id', seniorId)
@@ -39,11 +39,16 @@ export async function getNextVideoForSenior(seniorId, language) {
     .limit(1)
     .single();
 
+  if (lastLogError && lastLogError.code !== 'PGRST116') {
+    console.error('Error fetching last log for senior:', lastLogError);
+    throw lastLogError;
+  }
+
   let nextSequence = 1;
 
   if (lastLog?.videos?.sequence_order) {
     // Get the next video in sequence
-    const { data: nextVideo } = await supabase
+    const { data: nextVideo, error: nextVideoError } = await supabase
       .from('videos')
       .select('*')
       .eq('language', language)
@@ -51,6 +56,11 @@ export async function getNextVideoForSenior(seniorId, language) {
       .order('sequence_order', { ascending: true })
       .limit(1)
       .single();
+
+    if (nextVideoError && nextVideoError.code !== 'PGRST116') {
+      console.error('Error fetching next video:', nextVideoError);
+      throw nextVideoError;
+    }
 
     if (nextVideo) {
       return nextVideo;

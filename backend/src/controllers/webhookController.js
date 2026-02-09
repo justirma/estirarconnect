@@ -43,6 +43,7 @@ export async function handleIncomingMessage(req, res) {
     const messageData = parseIncomingMessage(req.body);
 
     if (!messageData) {
+      console.warn('Webhook received but no parseable message:', JSON.stringify(req.body).slice(0, 200));
       return res.sendStatus(200);
     }
 

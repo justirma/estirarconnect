@@ -40,7 +40,7 @@ app.get('/api/cron/daily-messages', async (req, res) => {
     await sendDailyMessages(req, res);
   } catch (error) {
     console.error('Cron job error:', error);
-    res.status(500).json({ error: 'Failed to send weekly messages' });
+    return res.status(500).json({ error: 'Failed to send weekly messages' });
   }
 });
 

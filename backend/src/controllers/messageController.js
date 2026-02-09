@@ -138,7 +138,7 @@ async function sendReminders(req, res) {
 
       const video = weekLog.videos;
       const reminderTemplateName = senior.language === 'es'
-        ? (process.env.WHATSAPP_REMINDER_TEMPLATE_NAME_ES || 'recordatorio_ejercicio_semanal')
+        ? (process.env.WHATSAPP_REMINDER_TEMPLATE_NAME_ES || 'sesion_ejercicio_semanal')
         : (process.env.WHATSAPP_REMINDER_TEMPLATE_NAME_EN || 'weekly_exercise_reminder');
 
       const result = await sendWhatsAppReminderTemplate(

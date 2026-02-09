@@ -92,10 +92,62 @@ export async function sendWhatsAppTemplateMessage(phoneNumber, templateName, vid
   }
 }
 
+export async function sendWhatsAppReminderTemplate(phoneNumber, templateName, video, language) {
+  try {
+    const response = await axios.post(
+      WHATSAPP_API_URL,
+      {
+        messaging_product: 'whatsapp',
+        to: phoneNumber,
+        type: 'template',
+        template: {
+          name: templateName,
+          language: {
+            code: language === 'es' ? 'es_PA' : 'en'
+          },
+          components: [
+            {
+              type: 'body',
+              parameters: [
+                {
+                  type: 'text',
+                  text: video.title
+                },
+                {
+                  type: 'text',
+                  text: video.youtube_url
+                }
+              ]
+            }
+          ]
+        }
+      },
+      {
+        headers: {
+          'Authorization': `Bearer ${ACCESS_TOKEN}`,
+          'Content-Type': 'application/json'
+        }
+      }
+    );
+
+    return {
+      success: true,
+      messageId: response.data.messages[0].id,
+      data: response.data
+    };
+  } catch (error) {
+    console.error('WhatsApp Reminder Template API Error:', error.response?.data || error.message);
+    return {
+      success: false,
+      error: error.response?.data || error.message
+    };
+  }
+}
+
 export function formatVideoMessage(video, language) {
   const greetings = {
-    en: `Hello! 👋\n\nHere's today's chair exercise:\n\n📹 ${video.title}\n\n${video.youtube_url}\n\nReply "DONE" when you complete it!`,
-    es: `¡Hola! 👋\n\nAquí está el ejercicio de silla de hoy:\n\n📹 ${video.title}\n\n${video.youtube_url}\n\n¡Responde "FIN" cuando lo completes!`
+    en: `Hello! 👋\n\nHere's this week's chair exercise:\n\n📹 ${video.title}\n\n${video.youtube_url}\n\nReply "DONE" when you complete it!`,
+    es: `¡Hola! 👋\n\nAquí está el ejercicio de silla de esta semana:\n\n📹 ${video.title}\n\n${video.youtube_url}\n\n¡Responde "FIN" cuando lo completes!`
   };
 
   return greetings[language] || greetings.en;

@@ -1,5 +1,5 @@
 import express from 'express';
-import { sendDailyMessages } from '../controllers/messageController.js';
+import { sendDailyMessages, sendTestMessage } from '../controllers/messageController.js';
 
 const router = express.Router();
 
@@ -13,5 +13,6 @@ const requireAuth = (req, res, next) => {
 };
 
 router.post('/send', requireAuth, sendDailyMessages);
+router.post('/send-test', requireAuth, sendTestMessage);
 
 export default router;

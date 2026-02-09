@@ -1,24 +1,25 @@
 import { verifyWebhook, parseIncomingMessage, sendWhatsAppMessage } from '../services/whatsapp.js';
 import { getSeniorByPhone, logReply, getCompletionStreak } from '../services/database.js';
 
-const COMPLETION_KEYWORDS = ['done', 'fin', 'listo', 'lista', 'complete', 'completed', 'hecho'];
+const COMPLETION_KEYWORDS = ['done', 'fin', 'listo', 'lista', 'complete', 'completed', 'hecho', 'finished', 'terminé', 'termine', 'lo hice'];
 
 function isCompletion(text) {
-  return COMPLETION_KEYWORDS.includes(text.toLowerCase().trim());
+  const lower = text.toLowerCase().trim();
+  return COMPLETION_KEYWORDS.some(kw => lower.includes(kw));
 }
 
 function getCompletionMessage(language, streak) {
   if (language === 'es') {
-    let msg = '¡Buen trabajo! 💪 Completaste el ejercicio de hoy.';
+    let msg = '¡Buen trabajo! 💪 ¡Nos vemos la próxima semana! Tu próximo video será enviado el domingo a las 9 AM EST.';
     if (streak >= 3) {
-      msg += `\n\n🔥 ¡${streak} días seguidos! ¡Sigue así!`;
+      msg += `\n\n🔥 ¡${streak} semanas seguidas! ¡Sigue así!`;
     }
     return msg;
   }
 
-  let msg = 'Great job! 💪 You completed today\'s exercise.';
+  let msg = 'Great job! 💪 See you next week! Your next video will be sent Sunday at 9 AM EST.';
   if (streak >= 3) {
-    msg += `\n\n🔥 ${streak} days in a row! Keep it up!`;
+    msg += `\n\n🔥 ${streak} weeks in a row! Keep it up!`;
   }
   return msg;
 }
@@ -68,6 +69,10 @@ export async function handleIncomingMessage(req, res) {
       await sendWhatsAppMessage(senior.phone_number, message);
       console.log(`Completion logged for senior ${senior.id} (streak: ${streak})`);
     } else {
+      const nudge = senior.language === 'es'
+        ? '¡Gracias por tu mensaje! Si ya terminaste el ejercicio, cuéntanos y lo marcaremos como completado 😊'
+        : 'Thanks for your message! If you\'ve finished the exercise, just let us know and we\'ll mark it complete 😊';
+      await sendWhatsAppMessage(senior.phone_number, nudge);
       console.log(`Reply logged for senior ${senior.id}: ${replyText}`);
     }
 

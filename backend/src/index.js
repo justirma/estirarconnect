@@ -32,13 +32,15 @@ app.get('/api/cron/daily-messages', async (req, res) => {
     return res.status(401).json({ error: 'Unauthorized' });
   }
 
-  console.log(`[${new Date().toISOString()}] Vercel Cron: sending daily messages`);
+  const now = new Date();
+  const dayName = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'][now.getUTCDay()];
+  console.log(`[${now.toISOString()}] Vercel Cron: ${dayName} - ${now.getUTCDay() === 0 ? 'sending weekly videos' : 'sending reminders'}`);
 
   try {
     await sendDailyMessages(req, res);
   } catch (error) {
     console.error('Cron job error:', error);
-    res.status(500).json({ error: 'Failed to send daily messages' });
+    res.status(500).json({ error: 'Failed to send weekly messages' });
   }
 });
 

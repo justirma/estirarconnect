@@ -136,12 +136,16 @@ export async function logReply(seniorId, replyText, isCompletion = false) {
 }
 
 export async function getCompletionStreak(seniorId) {
+  // Only count logs from the weekly model onward to avoid inflated streaks
+  const WEEKLY_MODEL_START = '2026-02-08T00:00:00Z';
+
   const { data, error } = await supabase
     .from('logs')
     .select('completed, sent_at')
     .eq('senior_id', seniorId)
+    .gte('sent_at', WEEKLY_MODEL_START)
     .order('sent_at', { ascending: false })
-    .limit(30);
+    .limit(52);
 
   if (error || !data) return 0;
 
@@ -154,6 +158,63 @@ export async function getCompletionStreak(seniorId) {
     }
   }
   return streak;
+}
+
+export async function getThisWeeksLog(seniorId) {
+  const now = new Date();
+  const daysSinceSunday = now.getUTCDay(); // 0=Sun, 1=Mon, ... 6=Sat
+  const startOfWeek = new Date(now);
+  startOfWeek.setUTCDate(now.getUTCDate() - daysSinceSunday);
+  startOfWeek.setUTCHours(0, 0, 0, 0);
+
+  const { data, error } = await supabase
+    .from('logs')
+    .select('id, senior_id, video_id, sent_at, completed, replied_at, videos(title, youtube_url)')
+    .eq('senior_id', seniorId)
+    .gte('sent_at', startOfWeek.toISOString())
+    .order('sent_at', { ascending: false })
+    .limit(1)
+    .single();
+
+  if (error && error.code !== 'PGRST116') {
+    console.error('Error fetching this week log:', error);
+    throw error;
+  }
+
+  return data;
+}
+
+export async function markIncompleteLogsAsSkipped(seniorId) {
+  const { data, error } = await supabase
+    .from('logs')
+    .update({ status: 'skipped' })
+    .eq('senior_id', seniorId)
+    .eq('status', 'sent')
+    .is('completed', null)
+    .select();
+
+  if (error) {
+    console.error('Error marking logs as skipped:', error);
+    throw error;
+  }
+
+  return data;
+}
+
+export async function getVideoBySequence(language, sequenceOrder = 1) {
+  const { data, error } = await supabase
+    .from('videos')
+    .select('*')
+    .eq('language', language)
+    .eq('sequence_order', sequenceOrder)
+    .single();
+
+  if (error) {
+    console.error('Error fetching video by sequence:', error);
+    throw error;
+  }
+
+  return data;
 }
 
 export async function getAllVideos() {

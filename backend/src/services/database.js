@@ -123,7 +123,8 @@ export async function logReply(seniorId, replyText, isCompletion = false) {
 
   const updateData = {
     reply_text: replyText,
-    replied_at: new Date().toISOString()
+    replied_at: new Date().toISOString(),
+    status: 'read'
   };
 
   if (isCompletion) {
@@ -221,6 +222,21 @@ export async function getVideoBySequence(language, sequenceOrder = 1) {
 
   if (error) {
     console.error('Error fetching video by sequence:', error);
+    throw error;
+  }
+
+  return data;
+}
+
+export async function getRecentLogsWithDetails(limit = 50) {
+  const { data, error } = await supabase
+    .from('logs')
+    .select('id, sent_at, status, reply_text, replied_at, completed, seniors(phone_number, language), videos(title, youtube_url)')
+    .order('sent_at', { ascending: false })
+    .limit(limit);
+
+  if (error) {
+    console.error('Error fetching recent logs:', error);
     throw error;
   }
 

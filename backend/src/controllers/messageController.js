@@ -1,4 +1,4 @@
-import { getActiveSeniors, getNextVideoForSenior, logMessageSent, getVideoBySequence, getThisWeeksLog, markIncompleteLogsAsSkipped } from '../services/database.js';
+import { getActiveSeniors, getNextVideoForSenior, logMessageSent, getVideoBySequence, getThisWeeksLog, markIncompleteLogsAsSkipped, getSeniorByPhone } from '../services/database.js';
 import { sendWhatsAppTemplateMessage, sendWhatsAppReminderTemplate } from '../services/whatsapp.js';
 
 export async function sendWeeklyMessages(req, res) {
@@ -200,6 +200,13 @@ export async function sendTestMessage(req, res) {
       : (process.env.WHATSAPP_TEMPLATE_NAME_EN || 'daily_exercise_update');
 
     const result = await sendWhatsAppTemplateMessage(phoneNumber, templateName, video, language);
+
+    // Log the test message so it appears in the dashboard
+    const senior = await getSeniorByPhone(phoneNumber);
+    if (senior) {
+      const status = result.success ? 'sent' : 'failed';
+      await logMessageSent(senior.id, video.id, status);
+    }
 
     if (!result.success) {
       return res.status(500).json({

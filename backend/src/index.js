@@ -2,6 +2,7 @@ import express from 'express';
 import dotenv from 'dotenv';
 import webhookRouter from './routes/webhook.js';
 import messagesRouter from './routes/messages.js';
+import adminRouter from './routes/admin.js';
 import { sendDailyMessages } from './controllers/messageController.js';
 
 dotenv.config();
@@ -23,6 +24,7 @@ app.get('/', (req, res) => {
 // Routes
 app.use('/webhook', webhookRouter);
 app.use('/messages', messagesRouter);
+app.use('/admin', adminRouter);
 
 // Vercel Cron endpoint — called automatically by Vercel's cron scheduler
 app.get('/api/cron/daily-messages', async (req, res) => {

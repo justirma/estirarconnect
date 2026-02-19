@@ -1,4 +1,5 @@
-import { getRecentLogsWithDetails } from '../services/database.js';
+import { getRecentLogsWithDetails, getSeniorByPhone, logReply, getCompletionStreak } from '../services/database.js';
+import { sendWhatsAppMessage } from '../services/whatsapp.js';
 
 export async function getRecentLogs(req, res) {
   try {
@@ -6,6 +7,49 @@ export async function getRecentLogs(req, res) {
     return res.json({ success: true, logs });
   } catch (error) {
     console.error('Error fetching logs:', error);
+    return res.status(500).json({ success: false, error: error.message });
+  }
+}
+
+const COMPLETION_KEYWORDS = ['done', 'fin', 'listo', 'lista', 'complete', 'completed', 'hecho', 'finished', 'terminé', 'termine', 'lo hice'];
+
+function isCompletion(text) {
+  const lower = text.toLowerCase().trim();
+  return COMPLETION_KEYWORDS.some(kw => lower.includes(kw));
+}
+
+export async function processReply(req, res) {
+  try {
+    const { phoneNumber, replyText } = req.body;
+    if (!phoneNumber || !replyText) {
+      return res.status(400).json({ success: false, error: 'phoneNumber and replyText required' });
+    }
+
+    const senior = await getSeniorByPhone(phoneNumber);
+    if (!senior) {
+      return res.status(404).json({ success: false, error: 'Senior not found' });
+    }
+
+    const completed = isCompletion(replyText);
+    await logReply(senior.id, replyText, completed);
+
+    if (completed) {
+      const streak = await getCompletionStreak(senior.id);
+      const lang = senior.language;
+      let msg = lang === 'es'
+        ? '¡Buen trabajo! 💪 ¡Nos vemos la próxima semana! Tu próximo video será enviado el domingo a las 9 AM EST.'
+        : 'Great job! 💪 See you next week! Your next video will be sent Sunday at 9 AM EST.';
+      if (streak >= 3) {
+        msg += lang === 'es'
+          ? `\n\n🔥 ¡${streak} semanas seguidas! ¡Sigue así!`
+          : `\n\n🔥 ${streak} weeks in a row! Keep it up!`;
+      }
+      await sendWhatsAppMessage(senior.phone_number, msg);
+    }
+
+    return res.json({ success: true, completed });
+  } catch (error) {
+    console.error('Error processing reply:', error);
     return res.status(500).json({ success: false, error: error.message });
   }
 }
@@ -61,6 +105,7 @@ export function serveAdminDashboard(req, res) {
   <div class="container">
     <div class="actions">
       <button class="btn" id="sendTestBtn" onclick="sendTestMessage()">Send Test Message</button>
+      <button class="btn" id="processReplyBtn" onclick="processReplyAction()" style="background:#075e54">Process Reply</button>
       <span id="statusMsg"></span>
     </div>
 
@@ -158,6 +203,43 @@ export function serveAdminDashboard(req, res) {
 
       btn.disabled = false;
       btn.textContent = 'Send Test Message';
+    }
+
+    async function processReplyAction() {
+      const btn = document.getElementById('processReplyBtn');
+      const msg = document.getElementById('statusMsg');
+
+      const replyText = prompt('Enter the reply text (e.g. "Done"):');
+      if (!replyText) return;
+
+      btn.disabled = true;
+      btn.textContent = 'Processing...';
+      msg.textContent = '';
+      msg.className = 'status-msg';
+
+      try {
+        const res = await fetch('/admin/api/process-reply', {
+          method: 'POST',
+          headers: apiHeaders(),
+          body: JSON.stringify({ phoneNumber: '+13055629885', replyText: replyText })
+        });
+        const data = await res.json();
+
+        if (data.success) {
+          msg.textContent = 'Reply processed' + (data.completed ? ' — marked as completed!' : '');
+          msg.className = 'status-msg success';
+          setTimeout(fetchLogs, 1000);
+        } else {
+          msg.textContent = 'Failed: ' + (data.error || 'Unknown error');
+          msg.className = 'status-msg error';
+        }
+      } catch (err) {
+        msg.textContent = 'Error: ' + err.message;
+        msg.className = 'status-msg error';
+      }
+
+      btn.disabled = false;
+      btn.textContent = 'Process Reply';
     }
 
     fetchLogs();

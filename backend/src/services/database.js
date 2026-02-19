@@ -15,10 +15,12 @@ export async function getActiveSeniors() {
 }
 
 export async function getSeniorByPhone(phoneNumber) {
+  // Normalize: WhatsApp sends '13055629885', DB stores '+13055629885'
+  const normalized = phoneNumber.startsWith('+') ? phoneNumber : `+${phoneNumber}`;
   const { data, error } = await supabase
     .from('seniors')
     .select('*')
-    .eq('phone_number', phoneNumber)
+    .eq('phone_number', normalized)
     .single();
 
   if (error && error.code !== 'PGRST116') {

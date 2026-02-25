@@ -1,5 +1,7 @@
 import { getActiveSeniors, getNextVideoForSenior, logMessageSent, getVideoBySequence, getThisWeeksLog, markIncompleteLogsAsSkipped, getSeniorByPhone } from '../services/database.js';
 import { sendWhatsAppTemplateMessage, sendWhatsAppReminderTemplate } from '../services/whatsapp.js';
+import { sendWhatsAppMessage } from '../services/whatsapp.js';
+import { getPostHog } from '../config/posthog.js';
 
 export async function sendWeeklyMessages(req, res) {
   try {
@@ -77,6 +79,22 @@ async function sendSundayVideos(req, res) {
       });
 
       console.log(`[Sunday] Video ${status} to ${senior.phone_number}: ${video.title}`);
+
+      // PostHog tracking
+      const posthog = getPostHog();
+      if (posthog && result.success) {
+        posthog.capture({
+          distinctId: senior.id,
+          event: 'video_sent',
+          properties: { language: senior.language, video_title: video.title, video_sequence: video.sequence_order }
+        });
+      } else if (posthog && !result.success) {
+        posthog.capture({
+          distinctId: senior.id,
+          event: 'video_send_failed',
+          properties: { language: senior.language, error: String(result.error) }
+        });
+      }
     } catch (error) {
       console.error(`Error sending video to senior ${senior.id}:`, error);
       results.push({
@@ -86,6 +104,14 @@ async function sendSundayVideos(req, res) {
         error: error.message
       });
     }
+  }
+
+  // Admin alert for failures
+  const failures = results.filter(r => !r.success);
+  if (failures.length > 0 && process.env.ADMIN_PHONE_NUMBER) {
+    await sendWhatsAppMessage(process.env.ADMIN_PHONE_NUMBER,
+      `⚠️ Estirar Connect: ${failures.length} Sunday video(s) failed to send. Check Vercel logs.`
+    ).catch(e => console.error('Failed to send admin alert:', e));
   }
 
   return res.json({
@@ -148,6 +174,9 @@ async function sendReminders(req, res) {
         senior.language
       );
 
+      const reminderStatus = result.success ? 'sent' : 'failed';
+      await logMessageSent(senior.id, weekLog.video_id, reminderStatus, 'reminder');
+
       results.push({
         seniorId: senior.id,
         phoneNumber: senior.phone_number,
@@ -159,6 +188,16 @@ async function sendReminders(req, res) {
       });
 
       console.log(`[Reminder] ${result.success ? 'Sent' : 'Failed'} to ${senior.phone_number}`);
+
+      // PostHog tracking
+      const posthog = getPostHog();
+      if (posthog && result.success) {
+        posthog.capture({
+          distinctId: senior.id,
+          event: 'reminder_sent',
+          properties: { language: senior.language, video_title: video?.title }
+        });
+      }
     } catch (error) {
       console.error(`Error sending reminder to senior ${senior.id}:`, error);
       results.push({
@@ -173,6 +212,14 @@ async function sendReminders(req, res) {
   const sent = results.filter(r => !r.skipped && r.success).length;
   const skippedCompleted = results.filter(r => r.reason === 'already_completed').length;
   const skippedNoLog = results.filter(r => r.reason === 'no_weekly_log').length;
+
+  // Admin alert for reminder failures
+  const reminderFailures = results.filter(r => !r.skipped && !r.success);
+  if (reminderFailures.length > 0 && process.env.ADMIN_PHONE_NUMBER) {
+    await sendWhatsAppMessage(process.env.ADMIN_PHONE_NUMBER,
+      `⚠️ Estirar Connect: ${reminderFailures.length} reminder(s) failed to send. Check Vercel logs.`
+    ).catch(e => console.error('Failed to send admin alert:', e));
+  }
 
   return res.json({
     success: true,

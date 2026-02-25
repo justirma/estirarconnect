@@ -1,5 +1,5 @@
 import express from 'express';
-import { serveAdminDashboard, getRecentLogs, processReply } from '../controllers/adminController.js';
+import { serveAdminDashboard, getRecentLogs, processReply, getSeniors } from '../controllers/adminController.js';
 
 const router = express.Router();
 
@@ -12,8 +12,10 @@ const requireAuth = (req, res, next) => {
   next();
 };
 
-router.get('/', requireAuth, serveAdminDashboard);
+// Dashboard page: no auth required here — JS handles login via sessionStorage
+router.get('/', serveAdminDashboard);
 router.get('/api/logs', requireAuth, getRecentLogs);
 router.post('/api/process-reply', requireAuth, processReply);
+router.get('/api/seniors', requireAuth, getSeniors);
 
 export default router;

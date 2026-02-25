@@ -88,13 +88,46 @@ export async function getNextVideoForSenior(seniorId, language) {
   return video;
 }
 
-export async function logMessageSent(seniorId, videoId, status = 'sent') {
+export async function deactivateSenior(seniorId) {
+  const { data, error } = await supabase
+    .from('seniors')
+    .update({ active: false })
+    .eq('id', seniorId)
+    .select()
+    .single();
+
+  if (error) {
+    console.error('Error deactivating senior:', error);
+    throw error;
+  }
+
+  return data;
+}
+
+export async function reactivateSenior(seniorId) {
+  const { data, error } = await supabase
+    .from('seniors')
+    .update({ active: true })
+    .eq('id', seniorId)
+    .select()
+    .single();
+
+  if (error) {
+    console.error('Error reactivating senior:', error);
+    throw error;
+  }
+
+  return data;
+}
+
+export async function logMessageSent(seniorId, videoId, status = 'sent', type = 'video') {
   const { data, error } = await supabase
     .from('logs')
     .insert({
       senior_id: seniorId,
       video_id: videoId,
-      status: status
+      status: status,
+      type: type
     })
     .select()
     .single();
@@ -157,6 +190,7 @@ export async function getCompletionStreak(seniorId) {
     .select('completed, sent_at')
     .eq('senior_id', seniorId)
     .gte('sent_at', WEEKLY_MODEL_START)
+    .eq('type', 'video')
     .order('sent_at', { ascending: false })
     .limit(52);
 
@@ -185,6 +219,7 @@ export async function getThisWeeksLog(seniorId) {
     .select('id, senior_id, video_id, sent_at, completed, replied_at, videos(title, youtube_url)')
     .eq('senior_id', seniorId)
     .gte('sent_at', startOfWeek.toISOString())
+    .eq('type', 'video')
     .order('sent_at', { ascending: false })
     .limit(1)
     .single();
@@ -233,7 +268,7 @@ export async function getVideoBySequence(language, sequenceOrder = 1) {
 export async function getRecentLogsWithDetails(limit = 50) {
   const { data, error } = await supabase
     .from('logs')
-    .select('id, sent_at, status, reply_text, replied_at, completed, seniors(phone_number, language), videos(title, youtube_url)')
+    .select('id, sent_at, status, type, reply_text, replied_at, completed, seniors(name, phone_number, language), videos(title, youtube_url)')
     .order('sent_at', { ascending: false })
     .limit(limit);
 

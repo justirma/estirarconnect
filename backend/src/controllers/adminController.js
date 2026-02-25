@@ -1,4 +1,4 @@
-import { getRecentLogsWithDetails, getSeniorByPhone, logReply, getCompletionStreak } from '../services/database.js';
+import { getRecentLogsWithDetails, getSeniorByPhone, logReply, getCompletionStreak, getActiveSeniors } from '../services/database.js';
 import { sendWhatsAppMessage } from '../services/whatsapp.js';
 
 export async function getRecentLogs(req, res) {
@@ -19,19 +19,35 @@ function isCompletion(text) {
 }
 
 export async function processReply(req, res) {
+  if (process.env.NODE_ENV === 'production') {
+    return res.status(403).json({ error: 'Not available in production' });
+  }
+
   try {
     const { phoneNumber, replyText } = req.body;
     if (!phoneNumber || !replyText) {
       return res.status(400).json({ success: false, error: 'phoneNumber and replyText required' });
     }
 
-    const senior = await getSeniorByPhone(phoneNumber);
+    // Validate phone number format (E.164: + followed by 7-15 digits)
+    const phoneRegex = /^\+[1-9]\d{6,14}$/;
+    if (!phoneRegex.test(phoneNumber.trim())) {
+      return res.status(400).json({ success: false, error: 'Invalid phone number format. Use E.164 (e.g. +13055629885)' });
+    }
+
+    // Sanitize reply text
+    const sanitizedReply = String(replyText).trim().slice(0, 1000);
+    if (!sanitizedReply) {
+      return res.status(400).json({ success: false, error: 'replyText cannot be empty' });
+    }
+
+    const senior = await getSeniorByPhone(phoneNumber.trim());
     if (!senior) {
       return res.status(404).json({ success: false, error: 'Senior not found' });
     }
 
-    const completed = isCompletion(replyText);
-    await logReply(senior.id, replyText, completed);
+    const completed = isCompletion(sanitizedReply);
+    await logReply(senior.id, sanitizedReply, completed);
 
     if (completed) {
       const streak = await getCompletionStreak(senior.id);
@@ -54,8 +70,17 @@ export async function processReply(req, res) {
   }
 }
 
+export async function getSeniors(req, res) {
+  try {
+    const seniors = await getActiveSeniors();
+    return res.json({ success: true, seniors });
+  } catch (error) {
+    console.error('Error fetching seniors:', error);
+    return res.status(500).json({ success: false, error: error.message });
+  }
+}
+
 export function serveAdminDashboard(req, res) {
-  const token = req.query.token || '';
   const html = `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -67,12 +92,15 @@ export function serveAdminDashboard(req, res) {
     body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f0f2f5; color: #1a1a1a; }
     .header { background: #075e54; color: white; padding: 16px 24px; display: flex; align-items: center; justify-content: space-between; }
     .header h1 { font-size: 20px; font-weight: 600; }
-    .header .phone { font-size: 14px; opacity: 0.85; }
     .container { max-width: 1100px; margin: 24px auto; padding: 0 16px; }
     .actions { display: flex; gap: 12px; margin-bottom: 24px; align-items: center; }
     .btn { background: #25d366; color: white; border: none; padding: 10px 20px; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; }
     .btn:hover { background: #1da851; }
     .btn:disabled { background: #999; cursor: not-allowed; }
+    .btn-secondary { background: #075e54; }
+    .btn-secondary:hover { background: #054d44; }
+    .btn-danger { background: #dc3545; }
+    .btn-danger:hover { background: #c82333; }
     .status-msg { font-size: 14px; padding: 8px 12px; border-radius: 6px; }
     .status-msg.success { background: #d4edda; color: #155724; }
     .status-msg.error { background: #f8d7da; color: #721c24; }
@@ -88,9 +116,19 @@ export function serveAdminDashboard(req, res) {
     .badge.failed { background: #f8d7da; color: #721c24; }
     .badge.skipped { background: #fff3cd; color: #856404; }
     .badge.completed { background: #d4edda; color: #155724; }
+    .badge.reminder { background: #e2d9f3; color: #5a3e91; }
     .reply-text { max-width: 200px; word-wrap: break-word; }
     .empty { text-align: center; padding: 40px; color: #999; }
     .refresh-note { font-size: 12px; color: #999; margin-bottom: 16px; }
+    /* Login form */
+    #loginView { display: flex; align-items: center; justify-content: center; min-height: 80vh; }
+    .login-card { background: white; border-radius: 12px; padding: 40px; box-shadow: 0 2px 8px rgba(0,0,0,0.15); width: 100%; max-width: 360px; text-align: center; }
+    .login-card h2 { margin-bottom: 8px; color: #075e54; }
+    .login-card p { color: #666; font-size: 14px; margin-bottom: 24px; }
+    .login-card input { width: 100%; padding: 10px 14px; border: 1px solid #ddd; border-radius: 8px; font-size: 14px; margin-bottom: 12px; }
+    .login-card input:focus { outline: none; border-color: #25d366; }
+    .login-card .btn { width: 100%; }
+    .login-error { color: #721c24; font-size: 13px; margin-top: 8px; display: none; }
   </style>
 </head>
 <body>
@@ -99,42 +137,120 @@ export function serveAdminDashboard(req, res) {
       <h1>Estirar Connect</h1>
       <div>Admin Dashboard — WhatsApp Chair Exercise Bot</div>
     </div>
-    <div class="phone">WhatsApp Business Account</div>
+    <button class="btn btn-danger" onclick="logout()" style="padding:6px 14px;font-size:13px;">Logout</button>
   </div>
 
-  <div class="container">
-    <div class="actions">
-      <button class="btn" id="sendTestBtn" onclick="sendTestMessage()">Send Test Message</button>
-      <button class="btn" id="processReplyBtn" onclick="processReplyAction()" style="background:#075e54">Process Reply</button>
-      <span id="statusMsg"></span>
+  <!-- Login view -->
+  <div id="loginView">
+    <div class="login-card">
+      <h2>Admin Login</h2>
+      <p>Enter your admin token to continue</p>
+      <input type="password" id="tokenInput" placeholder="Admin token" onkeydown="if(event.key==='Enter') login()">
+      <button class="btn" onclick="login()">Login</button>
+      <div class="login-error" id="loginError">Invalid token. Please try again.</div>
     </div>
+  </div>
 
-    <div class="section-title">Message Log</div>
-    <div class="refresh-note">Auto-refreshes every 5 seconds</div>
+  <!-- Dashboard view -->
+  <div id="dashboardView" style="display:none">
+    <div class="container">
+      <div class="actions">
+        <button class="btn" id="sendTestBtn" onclick="sendTestMessage()">Send Test Message</button>
+        <button class="btn btn-secondary" id="processReplyBtn" onclick="processReplyAction()">Process Reply</button>
+        <span id="statusMsg"></span>
+      </div>
 
-    <table class="log-table">
-      <thead>
-        <tr>
-          <th>Senior</th>
-          <th>Video Sent</th>
-          <th>Sent At</th>
-          <th>Status</th>
-          <th>Reply</th>
-          <th>Replied At</th>
-          <th>Completed</th>
-        </tr>
-      </thead>
-      <tbody id="logBody">
-        <tr><td colspan="7" class="empty">Loading...</td></tr>
-      </tbody>
-    </table>
+      <div style="margin-bottom: 24px;">
+        <div class="section-title" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
+          Active Seniors
+          <span id="seniorCount" style="font-size:12px;color:#999;font-weight:400;"></span>
+        </div>
+        <table class="log-table">
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>Phone</th>
+              <th>Language</th>
+            </tr>
+          </thead>
+          <tbody id="seniorBody">
+            <tr><td colspan="3" class="empty">Loading...</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="section-title">Message Log</div>
+      <div class="refresh-note">Auto-refreshes every 30 seconds</div>
+
+      <table class="log-table">
+        <thead>
+          <tr>
+            <th>Senior</th>
+            <th>Video</th>
+            <th>Type</th>
+            <th>Sent At</th>
+            <th>Status</th>
+            <th>Reply</th>
+            <th>Replied At</th>
+            <th>Completed</th>
+          </tr>
+        </thead>
+        <tbody id="logBody">
+          <tr><td colspan="8" class="empty">Loading...</td></tr>
+        </tbody>
+      </table>
+    </div>
   </div>
 
   <script>
-    const TOKEN = '${token}';
+    const TOKEN_KEY = 'estirarAdminToken';
+
+    function esc(str) {
+      return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    }
+
+    function getToken() {
+      return sessionStorage.getItem(TOKEN_KEY);
+    }
 
     function apiHeaders() {
-      return { 'Authorization': 'Bearer ' + TOKEN, 'Content-Type': 'application/json' };
+      return { 'Authorization': 'Bearer ' + getToken(), 'Content-Type': 'application/json' };
+    }
+
+    function showLogin() {
+      document.getElementById('loginView').style.display = 'flex';
+      document.getElementById('dashboardView').style.display = 'none';
+    }
+
+    function showDashboard() {
+      document.getElementById('loginView').style.display = 'none';
+      document.getElementById('dashboardView').style.display = 'block';
+      fetchSeniors();
+      fetchLogs();
+    }
+
+    async function login() {
+      const token = document.getElementById('tokenInput').value.trim();
+      if (!token) return;
+
+      // Verify token by hitting a protected endpoint
+      const res = await fetch('/admin/api/logs', {
+        headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' }
+      });
+
+      if (res.status === 401) {
+        document.getElementById('loginError').style.display = 'block';
+        return;
+      }
+
+      document.getElementById('loginError').style.display = 'none';
+      sessionStorage.setItem(TOKEN_KEY, token);
+      showDashboard();
+    }
+
+    function logout() {
+      sessionStorage.removeItem(TOKEN_KEY);
+      showLogin();
     }
 
     function formatDate(iso) {
@@ -143,27 +259,59 @@ export function serveAdminDashboard(req, res) {
       return d.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true });
     }
 
+    async function fetchSeniors() {
+      try {
+        const res = await fetch('/admin/api/seniors', { headers: apiHeaders() });
+        if (res.status === 401) { showLogin(); return; }
+        const data = await res.json();
+        if (!data.success) return;
+
+        const tbody = document.getElementById('seniorBody');
+        const countEl = document.getElementById('seniorCount');
+
+        if (!data.seniors || data.seniors.length === 0) {
+          tbody.innerHTML = '<tr><td colspan="3" class="empty">No active seniors</td></tr>';
+          countEl.textContent = '0 enrolled';
+          return;
+        }
+
+        countEl.textContent = data.seniors.length + ' enrolled';
+        tbody.innerHTML = data.seniors.map(s =>
+          '<tr>' +
+          '<td><strong>' + esc(s.name || '—') + '</strong></td>' +
+          '<td>' + (s.phone_number || '—') + '</td>' +
+          '<td><span class="badge ' + (s.language === 'es' ? 'reminder' : 'sent') + '">' + (s.language || '—').toUpperCase() + '</span></td>' +
+          '</tr>'
+        ).join('');
+      } catch (err) {
+        console.error('Failed to fetch seniors:', err);
+      }
+    }
+
     async function fetchLogs() {
       try {
         const res = await fetch('/admin/api/logs', { headers: apiHeaders() });
+        if (res.status === 401) { showLogin(); return; }
         const data = await res.json();
         if (!data.success) return;
 
         const tbody = document.getElementById('logBody');
         if (!data.logs || data.logs.length === 0) {
-          tbody.innerHTML = '<tr><td colspan="7" class="empty">No messages yet</td></tr>';
+          tbody.innerHTML = '<tr><td colspan="8" class="empty">No messages yet</td></tr>';
           return;
         }
 
         tbody.innerHTML = data.logs.map(log => {
           const senior = log.seniors || {};
           const video = log.videos || {};
+          const logType = log.type || 'video';
           return '<tr>' +
-            '<td><strong>' + (senior.phone_number || 'Unknown') + '</strong><br><small>' + (senior.language || '').toUpperCase() + '</small></td>' +
+            '<td><strong>' + esc(senior.name || 'Unknown') + '</strong><br><small>' + (senior.phone_number || '') + ' · ' + (senior.language || '').toUpperCase() + '</small></td>' +
             '<td>' + (video.title || '—') + '</td>' +
+            '<td><span class="badge ' + logType + '">' + logType + '</span></td>' +
             '<td>' + formatDate(log.sent_at) + '</td>' +
             '<td><span class="badge ' + (log.status || '') + '">' + (log.status || '—') + '</span></td>' +
-            '<td class="reply-text">' + (log.reply_text || '—') + '</td>' +
+            '<td class="reply-text">' + (log.reply_text ? esc(log.reply_text) : '—') + '</td>' +
             '<td>' + formatDate(log.replied_at) + '</td>' +
             '<td>' + (log.completed ? '<span class="badge completed">Yes</span>' : '—') + '</td>' +
           '</tr>';
@@ -209,6 +357,9 @@ export function serveAdminDashboard(req, res) {
       const btn = document.getElementById('processReplyBtn');
       const msg = document.getElementById('statusMsg');
 
+      const phoneNumber = prompt('Enter senior phone number (e.g. +13055629885):');
+      if (!phoneNumber) return;
+
       const replyText = prompt('Enter the reply text (e.g. "Done"):');
       if (!replyText) return;
 
@@ -221,7 +372,7 @@ export function serveAdminDashboard(req, res) {
         const res = await fetch('/admin/api/process-reply', {
           method: 'POST',
           headers: apiHeaders(),
-          body: JSON.stringify({ phoneNumber: '+13055629885', replyText: replyText })
+          body: JSON.stringify({ phoneNumber: phoneNumber.trim(), replyText: replyText.trim() })
         });
         const data = await res.json();
 
@@ -242,8 +393,16 @@ export function serveAdminDashboard(req, res) {
       btn.textContent = 'Process Reply';
     }
 
-    fetchLogs();
-    setInterval(fetchLogs, 5000);
+    // Init: check for existing session
+    if (getToken()) {
+      showDashboard();
+    } else {
+      showLogin();
+    }
+
+    setInterval(() => {
+      if (getToken()) { fetchSeniors(); fetchLogs(); }
+    }, 30000);
   </script>
 </body>
 </html>`;

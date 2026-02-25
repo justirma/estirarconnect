@@ -4,13 +4,16 @@ import webhookRouter from './routes/webhook.js';
 import messagesRouter from './routes/messages.js';
 import adminRouter from './routes/admin.js';
 import { sendDailyMessages } from './controllers/messageController.js';
+import { getPostHog, shutdownPostHog } from './config/posthog.js';
 
 dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-app.use(express.json());
+app.use(express.json({
+  verify: (req, res, buf) => { req.rawBody = buf; }
+}));
 
 // Health check endpoint
 app.get('/', (req, res) => {
@@ -37,6 +40,16 @@ app.get('/api/cron/daily-messages', async (req, res) => {
   const now = new Date();
   const dayName = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'][now.getUTCDay()];
   console.log(`[${now.toISOString()}] Vercel Cron: ${dayName} - ${now.getUTCDay() === 0 ? 'sending weekly videos' : 'sending reminders'}`);
+
+  // Track cron execution in PostHog
+  const posthog = getPostHog();
+  if (posthog) {
+    posthog.capture({
+      distinctId: 'system',
+      event: 'cron_run',
+      properties: { day_of_week: dayName, action: now.getUTCDay() === 0 ? 'video' : 'reminder' }
+    });
+  }
 
   try {
     await sendDailyMessages(req, res);

@@ -16,7 +16,8 @@ CREATE INDEX IF NOT EXISTS idx_logs_senior_completed ON logs(senior_id, complete
 -- 4. Analytics views (Metabase auto-discovers these as queryable tables)
 
 -- Weekly completion trend: one row per week
-CREATE OR REPLACE VIEW weekly_completion_summary AS
+CREATE OR REPLACE VIEW weekly_completion_summary
+WITH (security_invoker = true) AS
 SELECT
   DATE_TRUNC('week', l.sent_at)::date AS week_of,
   COUNT(*) AS total_sent,
@@ -31,7 +32,8 @@ GROUP BY DATE_TRUNC('week', l.sent_at)::date
 ORDER BY week_of DESC;
 
 -- Per-senior lifetime stats
-CREATE OR REPLACE VIEW senior_analytics AS
+CREATE OR REPLACE VIEW senior_analytics
+WITH (security_invoker = true) AS
 SELECT
   s.id AS senior_id,
   s.phone_number,
@@ -51,7 +53,8 @@ GROUP BY s.id, s.phone_number, s.language, s.active
 ORDER BY completion_rate_pct DESC NULLS LAST;
 
 -- Per-senior, per-week detail for drill-down
-CREATE OR REPLACE VIEW senior_weekly_detail AS
+CREATE OR REPLACE VIEW senior_weekly_detail
+WITH (security_invoker = true) AS
 SELECT
   s.phone_number,
   s.language,

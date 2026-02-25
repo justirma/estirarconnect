@@ -1,9 +1,10 @@
 import axios from 'axios';
+import crypto from 'crypto';
 import dotenv from 'dotenv';
 
 dotenv.config();
 
-const WHATSAPP_API_URL = `https://graph.facebook.com/v18.0/${process.env.WHATSAPP_PHONE_NUMBER_ID}/messages`;
+const WHATSAPP_API_URL = `https://graph.facebook.com/v21.0/${process.env.WHATSAPP_PHONE_NUMBER_ID}/messages`;
 const ACCESS_TOKEN = process.env.WHATSAPP_ACCESS_TOKEN;
 
 export async function sendWhatsAppMessage(phoneNumber, message) {
@@ -144,13 +145,24 @@ export async function sendWhatsAppReminderTemplate(phoneNumber, templateName, vi
   }
 }
 
-export function formatVideoMessage(video, language) {
-  const greetings = {
-    en: `Hello! 👋\n\nHere's this week's chair exercise:\n\n📹 ${video.title}\n\n${video.youtube_url}\n\nReply "DONE" when you complete it!`,
-    es: `¡Hola! 👋\n\nAquí está el ejercicio de silla de esta semana:\n\n📹 ${video.title}\n\n${video.youtube_url}\n\n¡Responde "FIN" cuando lo completes!`
-  };
 
-  return greetings[language] || greetings.en;
+export function verifyWebhookSignature(rawBody, signature) {
+  const appSecret = process.env.WHATSAPP_APP_SECRET;
+  if (!appSecret) {
+    if (process.env.NODE_ENV === 'development') {
+      console.warn('WHATSAPP_APP_SECRET not set — skipping signature verification (dev only)');
+      return true;
+    }
+    console.error('WHATSAPP_APP_SECRET not set — blocking request in production');
+    return false;
+  }
+  if (!signature) return false;
+  const expected = 'sha256=' + crypto.createHmac('sha256', appSecret).update(rawBody).digest('hex');
+  try {
+    return crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(signature));
+  } catch {
+    return false;
+  }
 }
 
 export async function verifyWebhook(mode, token) {

@@ -146,6 +146,87 @@ export async function sendWhatsAppReminderTemplate(phoneNumber, templateName, vi
 }
 
 
+function getNextSundayFormatted(language) {
+  const now = new Date();
+  const dayOfWeek = now.getUTCDay(); // 0=Sun
+  let daysToAdd;
+  if (dayOfWeek === 0 && now.getUTCHours() < 14) {
+    daysToAdd = 0; // Today is Sunday and the cron hasn't run yet (9 AM EST = 14:00 UTC)
+  } else if (dayOfWeek === 0) {
+    daysToAdd = 7; // Today is Sunday but the video already sent
+  } else {
+    daysToAdd = 7 - dayOfWeek;
+  }
+  const nextSunday = new Date(now);
+  nextSunday.setUTCDate(now.getUTCDate() + daysToAdd);
+
+  if (language === 'es') {
+    const months = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
+    return `domingo, ${nextSunday.getUTCDate()} de ${months[nextSunday.getUTCMonth()]}`;
+  }
+  const months = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+  const day = nextSunday.getUTCDate();
+  const suffix = (day === 1 || day === 21 || day === 31) ? 'st' : (day === 2 || day === 22) ? 'nd' : (day === 3 || day === 23) ? 'rd' : 'th';
+  return `Sunday, ${months[nextSunday.getUTCMonth()]} ${day}${suffix}`;
+}
+
+export async function sendWelcomeTemplate(phoneNumber, name, language) {
+  const templateName = language === 'es'
+    ? process.env.WHATSAPP_WELCOME_TEMPLATE_NAME_ES
+    : process.env.WHATSAPP_WELCOME_TEMPLATE_NAME_EN;
+
+  if (!templateName) {
+    console.warn('Welcome template name not configured — skipping welcome message');
+    return { success: false, error: 'Welcome template not configured' };
+  }
+
+  const nextSunday = getNextSundayFormatted(language);
+
+  try {
+    const response = await axios.post(
+      WHATSAPP_API_URL,
+      {
+        messaging_product: 'whatsapp',
+        to: phoneNumber,
+        type: 'template',
+        template: {
+          name: templateName,
+          language: {
+            code: language === 'es' ? 'es_PA' : 'en_US'
+          },
+          components: [
+            {
+              type: 'body',
+              parameters: [
+                { type: 'text', text: name },
+                { type: 'text', text: nextSunday }
+              ]
+            }
+          ]
+        }
+      },
+      {
+        headers: {
+          'Authorization': `Bearer ${ACCESS_TOKEN}`,
+          'Content-Type': 'application/json'
+        }
+      }
+    );
+
+    return {
+      success: true,
+      messageId: response.data.messages[0].id,
+      data: response.data
+    };
+  } catch (error) {
+    console.error('WhatsApp Welcome Template API Error:', error.response?.data || error.message);
+    return {
+      success: false,
+      error: error.response?.data || error.message
+    };
+  }
+}
+
 export function verifyWebhookSignature(rawBody, signature) {
   const appSecret = process.env.WHATSAPP_APP_SECRET;
   if (!appSecret) {

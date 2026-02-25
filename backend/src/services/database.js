@@ -1,5 +1,15 @@
 import { supabase } from '../config/supabase.js';
 
+export async function insertSenior(phone, name, language) {
+  const { data, error } = await supabase
+    .from('seniors')
+    .insert([{ phone_number: phone, name, language, active: true }])
+    .select()
+    .single();
+  if (error) throw error;
+  return data;
+}
+
 export async function getActiveSeniors() {
   const { data, error } = await supabase
     .from('seniors')

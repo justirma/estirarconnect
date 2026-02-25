@@ -1,5 +1,5 @@
-import { getRecentLogsWithDetails, getSeniorByPhone, logReply, getCompletionStreak, getActiveSeniors } from '../services/database.js';
-import { sendWhatsAppMessage } from '../services/whatsapp.js';
+import { getRecentLogsWithDetails, getSeniorByPhone, logReply, getCompletionStreak, getActiveSeniors, insertSenior } from '../services/database.js';
+import { sendWhatsAppMessage, sendWelcomeTemplate } from '../services/whatsapp.js';
 
 export async function getRecentLogs(req, res) {
   try {
@@ -70,6 +70,45 @@ export async function processReply(req, res) {
   }
 }
 
+export async function addSenior(req, res) {
+  try {
+    const { phone, name, language } = req.body;
+
+    if (!phone || !name || !language) {
+      return res.status(400).json({ success: false, error: 'phone, name, and language are required' });
+    }
+
+    const phoneRegex = /^\+[1-9]\d{6,14}$/;
+    if (!phoneRegex.test(phone.trim())) {
+      return res.status(400).json({ success: false, error: 'Invalid phone number. Use E.164 format (e.g. +13055629885)' });
+    }
+
+    if (!['en', 'es'].includes(language)) {
+      return res.status(400).json({ success: false, error: 'language must be "en" or "es"' });
+    }
+
+    const sanitizedName = String(name).trim().slice(0, 100);
+    if (!sanitizedName) {
+      return res.status(400).json({ success: false, error: 'name cannot be empty' });
+    }
+
+    const senior = await insertSenior(phone.trim(), sanitizedName, language);
+
+    const welcomeResult = await sendWelcomeTemplate(phone.trim(), sanitizedName, language);
+    if (!welcomeResult.success) {
+      console.warn(`Welcome template failed for senior ${senior.id}:`, welcomeResult.error);
+    }
+
+    return res.json({ success: true, senior, welcomeSent: welcomeResult.success });
+  } catch (error) {
+    if (error.code === '23505') {
+      return res.status(409).json({ success: false, error: 'A senior with this phone number already exists' });
+    }
+    console.error('Error adding senior:', error);
+    return res.status(500).json({ success: false, error: error.message });
+  }
+}
+
 export async function getSeniors(req, res) {
   try {
     const seniors = await getActiveSeniors();
@@ -129,6 +168,13 @@ export function serveAdminDashboard(req, res) {
     .login-card input:focus { outline: none; border-color: #25d366; }
     .login-card .btn { width: 100%; }
     .login-error { color: #721c24; font-size: 13px; margin-top: 8px; display: none; }
+    /* Add Senior form */
+    .add-senior-section { background: white; border-radius: 8px; padding: 16px 20px; margin-bottom: 24px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+    .form-row { display: flex; gap: 12px; align-items: flex-end; flex-wrap: wrap; }
+    .form-field { display: flex; flex-direction: column; gap: 4px; }
+    .form-field label { font-size: 11px; font-weight: 600; color: #666; text-transform: uppercase; }
+    .form-field input, .form-field select { padding: 9px 12px; border: 1px solid #ddd; border-radius: 8px; font-size: 14px; min-width: 160px; }
+    .form-field input:focus, .form-field select:focus { outline: none; border-color: #25d366; }
   </style>
 </head>
 <body>
@@ -158,6 +204,29 @@ export function serveAdminDashboard(req, res) {
         <button class="btn" id="sendTestBtn" onclick="sendTestMessage()">Send Test Message</button>
         <button class="btn btn-secondary" id="processReplyBtn" onclick="processReplyAction()">Process Reply</button>
         <span id="statusMsg"></span>
+      </div>
+
+      <div class="add-senior-section">
+        <div class="section-title" style="margin-bottom:14px;">Add New Senior</div>
+        <div class="form-row">
+          <div class="form-field">
+            <label>Name</label>
+            <input type="text" id="newName" placeholder="Maria Garcia" />
+          </div>
+          <div class="form-field">
+            <label>Phone (E.164)</label>
+            <input type="text" id="newPhone" placeholder="+13055629885" />
+          </div>
+          <div class="form-field">
+            <label>Language</label>
+            <select id="newLanguage">
+              <option value="en">English</option>
+              <option value="es">Español</option>
+            </select>
+          </div>
+          <button class="btn" id="addSeniorBtn" onclick="addSeniorAction()">Add &amp; Send Welcome</button>
+        </div>
+        <span id="addSeniorStatus" style="display:block;margin-top:10px;"></span>
       </div>
 
       <div style="margin-bottom: 24px;">
@@ -391,6 +460,54 @@ export function serveAdminDashboard(req, res) {
 
       btn.disabled = false;
       btn.textContent = 'Process Reply';
+    }
+
+    async function addSeniorAction() {
+      const btn = document.getElementById('addSeniorBtn');
+      const status = document.getElementById('addSeniorStatus');
+      const name = document.getElementById('newName').value.trim();
+      const phone = document.getElementById('newPhone').value.trim();
+      const language = document.getElementById('newLanguage').value;
+
+      if (!name || !phone) {
+        status.textContent = 'Name and phone are required.';
+        status.className = 'status-msg error';
+        return;
+      }
+
+      btn.disabled = true;
+      btn.textContent = 'Adding...';
+      status.textContent = '';
+      status.className = 'status-msg';
+
+      try {
+        const res = await fetch('/admin/api/seniors', {
+          method: 'POST',
+          headers: apiHeaders(),
+          body: JSON.stringify({ name, phone, language })
+        });
+        const data = await res.json();
+
+        if (data.success) {
+          status.textContent = data.welcomeSent
+            ? name + ' added and welcome message sent!'
+            : name + ' added. (Welcome template not yet configured — message not sent)';
+          status.className = 'status-msg success';
+          document.getElementById('newName').value = '';
+          document.getElementById('newPhone').value = '';
+          document.getElementById('newLanguage').value = 'en';
+          fetchSeniors();
+        } else {
+          status.textContent = 'Failed: ' + (data.error || 'Unknown error');
+          status.className = 'status-msg error';
+        }
+      } catch (err) {
+        status.textContent = 'Error: ' + err.message;
+        status.className = 'status-msg error';
+      }
+
+      btn.disabled = false;
+      btn.textContent = 'Add & Send Welcome';
     }
 
     // Init: check for existing session

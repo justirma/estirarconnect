@@ -31,9 +31,9 @@ function isHelp(text) {
 
 function getHelpMessage(language) {
   if (language === 'es') {
-    return `Estirar Connect te envía un video de ejercicios cada domingo a las ${SEND_TIME}.\n\nResponde *Listo* cuando termines el ejercicio.\nEscribe *PARAR* para darte de baja.`;
+    return `Estirar Connect te envía un video de ejercicios cada domingo a las ${SEND_TIME}.\n\nResponde *Listo* cuando termines el ejercicio.\nEscribe *PARAR* para darte de baja.\n\n¿Preguntas? Escríbenos a estirarconnect@gmail.com`;
   }
-  return `Estirar Connect sends you a weekly chair exercise video every Sunday at ${SEND_TIME}.\n\nReply *Done* when you finish the exercise.\nReply *STOP* to unsubscribe.`;
+  return `Estirar Connect sends you a weekly chair exercise video every Sunday at ${SEND_TIME}.\n\nReply *Done* when you finish the exercise.\nReply *STOP* to unsubscribe.\n\nQuestions? Email us at estirarconnect@gmail.com`;
 }
 
 function getCompletionMessage(language, streak) {

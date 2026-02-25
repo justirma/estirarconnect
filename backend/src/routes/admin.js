@@ -1,5 +1,5 @@
 import express from 'express';
-import { serveAdminDashboard, getRecentLogs, processReply, getSeniors } from '../controllers/adminController.js';
+import { serveAdminDashboard, getRecentLogs, processReply, getSeniors, addSenior } from '../controllers/adminController.js';
 
 const router = express.Router();
 
@@ -17,5 +17,6 @@ router.get('/', serveAdminDashboard);
 router.get('/api/logs', requireAuth, getRecentLogs);
 router.post('/api/process-reply', requireAuth, processReply);
 router.get('/api/seniors', requireAuth, getSeniors);
+router.post('/api/seniors', requireAuth, addSenior);
 
 export default router;

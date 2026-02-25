@@ -1,4 +1,5 @@
 import express from 'express';
+import rateLimit from 'express-rate-limit';
 import { serveAdminDashboard, getRecentLogs, processReply, getSeniors, addSenior } from '../controllers/adminController.js';
 
 const router = express.Router();
@@ -12,11 +13,20 @@ const requireAuth = (req, res, next) => {
   next();
 };
 
+// Max 10 senior enrollments per IP per hour
+const addSeniorLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many requests, please try again later.' }
+});
+
 // Dashboard page: no auth required here — JS handles login via sessionStorage
 router.get('/', serveAdminDashboard);
 router.get('/api/logs', requireAuth, getRecentLogs);
 router.post('/api/process-reply', requireAuth, processReply);
 router.get('/api/seniors', requireAuth, getSeniors);
-router.post('/api/seniors', requireAuth, addSenior);
+router.post('/api/seniors', addSeniorLimiter, requireAuth, addSenior);
 
 export default router;

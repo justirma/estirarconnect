@@ -6,7 +6,9 @@ export function getPostHog() {
   if (!process.env.POSTHOG_API_KEY) return null;
   if (!client) {
     client = new PostHog(process.env.POSTHOG_API_KEY, {
-      host: 'https://us.i.posthog.com'
+      host: 'https://us.i.posthog.com',
+      flushAt: 1,
+      flushInterval: 0
     });
   }
   return client;

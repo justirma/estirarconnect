@@ -151,11 +151,12 @@ export async function logMessageSent(seniorId, videoId, status = 'sent', type = 
 }
 
 export async function logReply(seniorId, replyText, isCompletion = false) {
-  // Find the most recent log entry for this senior
+  // Find the most recent video log entry for this senior (not reminder logs)
   const { data: lastLog } = await supabase
     .from('logs')
     .select('id')
     .eq('senior_id', seniorId)
+    .eq('type', 'video')
     .is('replied_at', null)
     .order('sent_at', { ascending: false })
     .limit(1)

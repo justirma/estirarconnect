@@ -201,7 +201,7 @@ export async function getCompletionStreak(seniorId) {
     .select('completed, sent_at')
     .eq('senior_id', seniorId)
     .gte('sent_at', WEEKLY_MODEL_START)
-    .eq('type', 'video')
+    .in('type', ['video', 'workout'])
     .order('sent_at', { ascending: false })
     .limit(52);
 
@@ -248,6 +248,7 @@ export async function markIncompleteLogsAsSkipped(seniorId) {
     .from('logs')
     .update({ status: 'skipped' })
     .eq('senior_id', seniorId)
+    .in('type', ['video', 'workout'])
     .eq('status', 'sent')
     .is('completed', null)
     .select();
@@ -279,7 +280,7 @@ export async function getVideoBySequence(language, sequenceOrder = 1) {
 export async function getRecentLogsWithDetails(limit = 50) {
   const { data, error } = await supabase
     .from('logs')
-    .select('id, sent_at, status, type, reply_text, replied_at, completed, seniors(name, phone_number, language), videos(title, youtube_url)')
+    .select('id, sent_at, status, type, reply_text, replied_at, completed, seniors(name, phone_number, language), videos(title, youtube_url), workouts(title, image_url, theme)')
     .order('sent_at', { ascending: false })
     .limit(limit);
 
@@ -299,6 +300,209 @@ export async function getAllVideos() {
 
   if (error) {
     console.error('Error fetching videos:', error);
+    throw error;
+  }
+
+  return data;
+}
+
+// ---- Workout-based functions (image program model) ----
+
+export async function getCurrentWorkout(language) {
+  const now = new Date();
+  const currentMonth = now.getUTCMonth() + 1; // 1-12
+  const currentYear = now.getUTCFullYear();
+
+  // Calculate which week of the month we're in (1-5)
+  const firstDayOfMonth = new Date(Date.UTC(currentYear, currentMonth - 1, 1));
+  const dayOfMonth = now.getUTCDate();
+  const weekOfMonth = Math.ceil(dayOfMonth / 7);
+
+  const { data, error } = await supabase
+    .from('workouts')
+    .select('*')
+    .eq('language', language)
+    .eq('year', currentYear)
+    .eq('month', currentMonth)
+    .eq('week_number', weekOfMonth)
+    .eq('active', true)
+    .limit(1)
+    .single();
+
+  if (error && error.code !== 'PGRST116') {
+    console.error('Error fetching current workout:', error);
+    throw error;
+  }
+
+  return data;
+}
+
+export async function getNextWorkoutForSenior(seniorId, language) {
+  // First try to get a workout for the current week/month
+  const currentWorkout = await getCurrentWorkout(language);
+  if (currentWorkout) return currentWorkout;
+
+  // Fallback: get the next workout by sequence order (cycling)
+  const { data: lastLog } = await supabase
+    .from('logs')
+    .select('workout_id, workouts(sequence_order)')
+    .eq('senior_id', seniorId)
+    .eq('type', 'workout')
+    .not('workout_id', 'is', null)
+    .order('sent_at', { ascending: false })
+    .limit(1)
+    .single();
+
+  let nextSequence = 1;
+
+  if (lastLog?.workouts?.sequence_order) {
+    const { data: nextWorkout } = await supabase
+      .from('workouts')
+      .select('*')
+      .eq('language', language)
+      .eq('active', true)
+      .gt('sequence_order', lastLog.workouts.sequence_order)
+      .order('sequence_order', { ascending: true })
+      .limit(1)
+      .single();
+
+    if (nextWorkout) return nextWorkout;
+  }
+
+  // Cycle back to first
+  const { data: firstWorkout, error } = await supabase
+    .from('workouts')
+    .select('*')
+    .eq('language', language)
+    .eq('active', true)
+    .eq('sequence_order', nextSequence)
+    .single();
+
+  if (error) {
+    console.error('Error fetching fallback workout:', error);
+    throw error;
+  }
+
+  return firstWorkout;
+}
+
+export async function logWorkoutSent(seniorId, workoutId, status = 'sent', type = 'workout') {
+  const { data, error } = await supabase
+    .from('logs')
+    .insert({
+      senior_id: seniorId,
+      workout_id: workoutId,
+      status: status,
+      type: type
+    })
+    .select()
+    .single();
+
+  if (error) {
+    console.error('Error logging workout message:', error);
+    throw error;
+  }
+
+  return data;
+}
+
+export async function getThisWeeksWorkoutLog(seniorId) {
+  const now = new Date();
+  const daysSinceSunday = now.getUTCDay();
+  const startOfWeek = new Date(now);
+  startOfWeek.setUTCDate(now.getUTCDate() - daysSinceSunday);
+  startOfWeek.setUTCHours(0, 0, 0, 0);
+
+  const { data, error } = await supabase
+    .from('logs')
+    .select('id, senior_id, workout_id, sent_at, completed, replied_at, workouts(title, image_url, theme)')
+    .eq('senior_id', seniorId)
+    .gte('sent_at', startOfWeek.toISOString())
+    .eq('type', 'workout')
+    .order('sent_at', { ascending: false })
+    .limit(1)
+    .single();
+
+  if (error && error.code !== 'PGRST116') {
+    console.error('Error fetching this week workout log:', error);
+    throw error;
+  }
+
+  return data;
+}
+
+export async function logWorkoutReply(seniorId, replyText, isCompletion = false) {
+  // Find the most recent workout log entry (not reminder)
+  const { data: lastLog } = await supabase
+    .from('logs')
+    .select('id')
+    .eq('senior_id', seniorId)
+    .eq('type', 'workout')
+    .is('replied_at', null)
+    .order('sent_at', { ascending: false })
+    .limit(1)
+    .single();
+
+  if (!lastLog) {
+    // Try video-based log as fallback (transition period: senior may have
+    // a video log from before the switch or a workout log already replied to)
+    console.warn(`No unreplied workout log found for senior ${seniorId}, trying video fallback`);
+    return await logReply(seniorId, replyText, isCompletion);
+  }
+
+  const updateData = {
+    reply_text: replyText,
+    replied_at: new Date().toISOString(),
+    status: 'read'
+  };
+
+  if (isCompletion) {
+    updateData.completed = true;
+  }
+
+  const { data, error } = await supabase
+    .from('logs')
+    .update(updateData)
+    .eq('id', lastLog.id)
+    .select()
+    .single();
+
+  if (error) {
+    console.error('Error logging workout reply:', error);
+    throw error;
+  }
+
+  return data;
+}
+
+export async function getAllWorkouts() {
+  const { data, error } = await supabase
+    .from('workouts')
+    .select('*')
+    .eq('active', true)
+    .order('year', { ascending: true })
+    .order('month', { ascending: true })
+    .order('week_number', { ascending: true });
+
+  if (error) {
+    console.error('Error fetching workouts:', error);
+    throw error;
+  }
+
+  return data;
+}
+
+export async function getWorkoutBySequence(language, sequenceOrder = 1) {
+  const { data, error } = await supabase
+    .from('workouts')
+    .select('*')
+    .eq('language', language)
+    .eq('active', true)
+    .eq('sequence_order', sequenceOrder)
+    .single();
+
+  if (error) {
+    console.error('Error fetching workout by sequence:', error);
     throw error;
   }
 

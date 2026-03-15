@@ -1,5 +1,7 @@
 import { verifyWebhook, verifyWebhookSignature, parseIncomingMessage, sendWhatsAppMessage } from '../services/whatsapp.js';
-import { getSeniorByPhone, logReply, getCompletionStreak, deactivateSenior, reactivateSenior } from '../services/database.js';
+import { getSeniorByPhone, logReply, logWorkoutReply, getCompletionStreak, deactivateSenior, reactivateSenior } from '../services/database.js';
+
+const USE_WORKOUT_IMAGES = process.env.USE_WORKOUT_IMAGES === 'true';
 import { getPostHog } from '../config/posthog.js';
 
 const SEND_TIME = process.env.SEND_TIME_DISPLAY || '9 AM EST';
@@ -31,9 +33,9 @@ function isHelp(text) {
 
 function getHelpMessage(language) {
   if (language === 'es') {
-    return `Estirar Connect te envía un video de ejercicios cada domingo a las ${SEND_TIME}.\n\nResponde *Listo* cuando termines el ejercicio.\nEscribe *PARAR* para darte de baja.\n\n¿Preguntas? Escríbenos a estirarconnect@gmail.com`;
+    return `Estirar Connect te envía ejercicios cada domingo a las ${SEND_TIME}.\n\nResponde *Listo* cuando termines los ejercicios.\nEscribe *PARAR* para darte de baja.\n\n¿Preguntas? Escríbenos a estirarconnect@gmail.com`;
   }
-  return `Estirar Connect sends you a weekly chair exercise video every Sunday at ${SEND_TIME}.\n\nReply *Done* when you finish the exercise.\nReply *STOP* to unsubscribe.\n\nQuestions? Email us at estirarconnect@gmail.com`;
+  return `Estirar Connect sends you a weekly workout every Sunday at ${SEND_TIME}.\n\nReply *Done* when you finish the exercises.\nReply *STOP* to unsubscribe.\n\nQuestions? Email us at estirarconnect@gmail.com`;
 }
 
 function getCompletionMessage(language, streak) {
@@ -53,9 +55,9 @@ function getCompletionMessage(language, streak) {
   }
 
   if (language === 'es') {
-    return `¡Buen trabajo! 💪 ¡Nos vemos la próxima semana! Tu próximo video será enviado el domingo a las ${SEND_TIME}.${streakMsg}`;
+    return `¡Buen trabajo! 💪 ¡Nos vemos la próxima semana! Tu próximo ejercicio será enviado el domingo a las ${SEND_TIME}.${streakMsg}`;
   }
-  return `Great job! 💪 See you next week! Your next video will be sent Sunday at ${SEND_TIME}.${streakMsg}`;
+  return `Great job! 💪 See you next week! Your next workout will be sent Sunday at ${SEND_TIME}.${streakMsg}`;
 }
 
 export async function handleWebhookVerification(req, res) {
@@ -146,8 +148,12 @@ export async function handleIncomingMessage(req, res) {
 
     const completed = isCompletion(replyText);
 
-    // Log the reply
-    await logReply(senior.id, replyText, completed);
+    // Log the reply (use workout logger if in workout mode)
+    if (USE_WORKOUT_IMAGES) {
+      await logWorkoutReply(senior.id, replyText, completed);
+    } else {
+      await logReply(senior.id, replyText, completed);
+    }
 
     if (completed) {
       const streak = await getCompletionStreak(senior.id);

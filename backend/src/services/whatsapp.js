@@ -227,6 +227,47 @@ export async function sendWelcomeTemplate(phoneNumber, name, language) {
   }
 }
 
+export async function sendWhatsAppImageMessage(phoneNumber, imageUrl, caption) {
+  try {
+    // Validate image URL to prevent SSRF — only allow HTTPS from known hosts
+    const url = new URL(imageUrl);
+    if (url.protocol !== 'https:') {
+      return { success: false, error: 'Image URL must use HTTPS' };
+    }
+
+    const response = await axios.post(
+      WHATSAPP_API_URL,
+      {
+        messaging_product: 'whatsapp',
+        to: phoneNumber,
+        type: 'image',
+        image: {
+          link: imageUrl,
+          caption: caption || ''
+        }
+      },
+      {
+        headers: {
+          'Authorization': `Bearer ${ACCESS_TOKEN}`,
+          'Content-Type': 'application/json'
+        }
+      }
+    );
+
+    return {
+      success: true,
+      messageId: response.data.messages[0].id,
+      data: response.data
+    };
+  } catch (error) {
+    console.error('WhatsApp Image API Error:', error.response?.data || error.message);
+    return {
+      success: false,
+      error: error.response?.data || error.message
+    };
+  }
+}
+
 export function verifyWebhookSignature(rawBody, signature) {
   const appSecret = process.env.WHATSAPP_APP_SECRET;
   if (!appSecret) {

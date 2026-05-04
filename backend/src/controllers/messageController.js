@@ -84,6 +84,18 @@ async function sendSundayWorkouts(req, res) {
         continue;
       }
 
+      // Send approved reminder template first to open the 24h conversation window,
+      // then send the free-form image which requires an open window to deliver.
+      const reminderTemplateName = senior.language === 'es'
+        ? (process.env.WHATSAPP_REMINDER_TEMPLATE_NAME_ES || 'sesion_ejercicio_semanal')
+        : (process.env.WHATSAPP_REMINDER_TEMPLATE_NAME_EN || 'weekly_exercise_reminder');
+      await sendWhatsAppReminderTemplate(
+        senior.phone_number,
+        reminderTemplateName,
+        { title: workout.title, youtube_url: senior.language === 'es' ? 'Responde *Listo* cuando termines.' : 'Reply *Done* when you finish.' },
+        senior.language
+      );
+
       const caption = getWorkoutCaption(workout, senior.language);
       const result = await sendWhatsAppImageMessage(
         senior.phone_number,

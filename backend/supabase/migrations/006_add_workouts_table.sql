@@ -1,5 +1,4 @@
 -- Migration 006: Add workouts table for image-based exercise programs
--- Replaces the video-per-week model with themed monthly workout images
 -- Run in Supabase SQL Editor: Dashboard → SQL Editor → paste → Run
 
 -- 1. Create workouts table
@@ -29,27 +28,28 @@ CREATE UNIQUE INDEX idx_workouts_unique_week
   ON workouts(language, year, month, week_number)
   WHERE active = true;
 
--- 4. Allow logs to reference workouts instead of videos
--- Make video_id nullable so new logs can use workout_id instead
+-- 4. Make video_id nullable so new logs can use workout_id instead
 ALTER TABLE logs ALTER COLUMN video_id DROP NOT NULL;
 
 -- 5. Add workout_id to logs
 ALTER TABLE logs ADD COLUMN workout_id UUID REFERENCES workouts(id) ON DELETE CASCADE;
 CREATE INDEX idx_logs_workout_id ON logs(workout_id);
 
--- 6. Ensure every log references either a video or a workout (never both null)
+-- 6. Ensure every log references either a video or a workout
 ALTER TABLE logs ADD CONSTRAINT logs_needs_video_or_workout
   CHECK ((video_id IS NOT NULL) OR (workout_id IS NOT NULL));
 
--- 7. Add 'workout' to the log type check constraint
+-- 7. Update log type constraint
 ALTER TABLE logs DROP CONSTRAINT IF EXISTS logs_type_check;
 ALTER TABLE logs ADD CONSTRAINT logs_type_check
   CHECK (type IN ('video', 'reminder', 'workout', 'workout_reminder'));
 
--- 7. Update analytics views to include workouts
+-- 8. Drop and recreate views (can't add columns with CREATE OR REPLACE)
+DROP VIEW IF EXISTS senior_weekly_detail;
+DROP VIEW IF EXISTS senior_analytics;
+DROP VIEW IF EXISTS weekly_completion_summary;
 
--- Weekly completion trend: include both video and workout logs
-CREATE OR REPLACE VIEW weekly_completion_summary
+CREATE VIEW weekly_completion_summary
 WITH (security_invoker = true) AS
 SELECT
   DATE_TRUNC('week', l.sent_at)::date AS week_of,
@@ -65,8 +65,7 @@ WHERE l.type IN ('video', 'workout')
 GROUP BY DATE_TRUNC('week', l.sent_at)::date
 ORDER BY week_of DESC;
 
--- Per-senior lifetime stats (include workouts)
-CREATE OR REPLACE VIEW senior_analytics
+CREATE VIEW senior_analytics
 WITH (security_invoker = true) AS
 SELECT
   s.id AS senior_id,
@@ -87,8 +86,7 @@ LEFT JOIN logs l ON l.senior_id = s.id AND l.type IN ('video', 'workout')
 GROUP BY s.id, s.phone_number, s.name, s.language, s.active
 ORDER BY completion_rate_pct DESC NULLS LAST;
 
--- Per-senior, per-week detail (include workouts)
-CREATE OR REPLACE VIEW senior_weekly_detail
+CREATE VIEW senior_weekly_detail
 WITH (security_invoker = true) AS
 SELECT
   s.phone_number,
@@ -113,7 +111,15 @@ LEFT JOIN videos v ON v.id = l.video_id
 LEFT JOIN workouts w ON w.id = l.workout_id
 ORDER BY l.sent_at DESC;
 
--- 8. Comments
+-- 9. Enable RLS on workouts (backend uses SERVICE_KEY which bypasses RLS)
+ALTER TABLE workouts ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Service role only" ON workouts;
+CREATE POLICY "Service role only" ON workouts
+  FOR ALL
+  USING (false);
+
+-- 10. Comments
 COMMENT ON TABLE workouts IS 'Stores weekly workout image metadata, organized by monthly themes';
 COMMENT ON COLUMN workouts.image_url IS 'Public URL from Supabase Storage for the workout image';
 COMMENT ON COLUMN workouts.theme IS 'Monthly theme e.g. Balance, Flexibility, Strength';

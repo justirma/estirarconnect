@@ -351,11 +351,15 @@ export function parseIncomingMessage(body) {
     const message = value.messages[0];
     const contact = value.contacts?.[0];
 
+    const buttonText = message.type === 'interactive'
+      ? message.interactive?.button_reply?.title || ''
+      : '';
+
     return {
       from: message.from,
       messageId: message.id,
       timestamp: message.timestamp,
-      text: message.text?.body || '',
+      text: message.text?.body || buttonText,
       type: message.type,
       contactName: contact?.profile?.name || 'Unknown'
     };

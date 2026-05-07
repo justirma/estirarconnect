@@ -486,6 +486,16 @@ export async function sendTestMessage(req, res) {
         });
       }
 
+      const reminderTemplateName = language === 'es'
+        ? (process.env.WHATSAPP_REMINDER_TEMPLATE_NAME_ES || 'sesion_ejercicio_semanal')
+        : (process.env.WHATSAPP_REMINDER_TEMPLATE_NAME_EN || 'weekly_exercise_reminder');
+      await sendWhatsAppReminderTemplate(
+        phoneNumber,
+        reminderTemplateName,
+        { title: workout.title, youtube_url: language === 'es' ? 'Responde *Listo* cuando termines.' : 'Reply *Done* when you finish.' },
+        language
+      );
+
       const caption = getWorkoutCaption(workout, language);
       const result = await sendWhatsAppImageMessage(phoneNumber, workout.image_url, caption);
 

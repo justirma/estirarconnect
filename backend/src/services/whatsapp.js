@@ -247,7 +247,7 @@ export async function sendWorkoutImageTemplate(phoneNumber, templateName, workou
               type: 'body',
               parameters: [
                 { type: 'text', text: workout.title },
-                { type: 'text', text: workout.description || '' }
+                { type: 'text', text: (workout.description || '').replace(/\n/g, ' | ') }
               ]
             }
           ]

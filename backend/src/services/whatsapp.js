@@ -227,6 +227,47 @@ export async function sendWelcomeTemplate(phoneNumber, name, language) {
   }
 }
 
+export async function sendWorkoutImageTemplate(phoneNumber, templateName, workout, language) {
+  try {
+    const response = await axios.post(
+      WHATSAPP_API_URL,
+      {
+        messaging_product: 'whatsapp',
+        to: phoneNumber,
+        type: 'template',
+        template: {
+          name: templateName,
+          language: { code: language === 'es' ? 'es_PA' : 'en' },
+          components: [
+            {
+              type: 'header',
+              parameters: [{ type: 'image', image: { link: workout.image_url } }]
+            },
+            {
+              type: 'body',
+              parameters: [
+                { type: 'text', text: workout.title },
+                { type: 'text', text: workout.description || '' }
+              ]
+            }
+          ]
+        }
+      },
+      {
+        headers: {
+          'Authorization': `Bearer ${ACCESS_TOKEN}`,
+          'Content-Type': 'application/json'
+        }
+      }
+    );
+
+    return { success: true, messageId: response.data.messages[0].id, data: response.data };
+  } catch (error) {
+    console.error('WhatsApp Workout Template API Error:', error.response?.data || error.message);
+    return { success: false, error: error.response?.data || error.message };
+  }
+}
+
 export async function sendWhatsAppImageMessage(phoneNumber, imageUrl, caption) {
   try {
     // Validate image URL to prevent SSRF — only allow HTTPS from known hosts

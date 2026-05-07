@@ -4,7 +4,7 @@ import {
   getSeniorByPhone, getNextWorkoutForSenior, logWorkoutSent,
   getThisWeeksWorkoutLog, getWorkoutBySequence
 } from '../services/database.js';
-import { sendWhatsAppTemplateMessage, sendWhatsAppReminderTemplate, sendWhatsAppImageMessage } from '../services/whatsapp.js';
+import { sendWhatsAppTemplateMessage, sendWhatsAppReminderTemplate, sendWhatsAppImageMessage, sendWorkoutImageTemplate } from '../services/whatsapp.js';
 import { sendWhatsAppMessage } from '../services/whatsapp.js';
 import { getPostHog } from '../config/posthog.js';
 
@@ -84,23 +84,14 @@ async function sendSundayWorkouts(req, res) {
         continue;
       }
 
-      // Send approved reminder template first to open the 24h conversation window,
-      // then send the free-form image which requires an open window to deliver.
-      const reminderTemplateName = senior.language === 'es'
-        ? (process.env.WHATSAPP_REMINDER_TEMPLATE_NAME_ES || 'sesion_ejercicio_semanal')
-        : (process.env.WHATSAPP_REMINDER_TEMPLATE_NAME_EN || 'weekly_exercise_reminder');
-      await sendWhatsAppReminderTemplate(
+      const workoutTemplateName = senior.language === 'es'
+        ? (process.env.WHATSAPP_WORKOUT_TEMPLATE_NAME_ES || 'imagen_ejercicio_semanal')
+        : (process.env.WHATSAPP_WORKOUT_TEMPLATE_NAME_EN || 'workout_image_weekly');
+      const result = await sendWorkoutImageTemplate(
         senior.phone_number,
-        reminderTemplateName,
-        { title: workout.title, youtube_url: senior.language === 'es' ? 'Responde *Listo* cuando termines.' : 'Reply *Done* when you finish.' },
+        workoutTemplateName,
+        workout,
         senior.language
-      );
-
-      const caption = getWorkoutCaption(workout, senior.language);
-      const result = await sendWhatsAppImageMessage(
-        senior.phone_number,
-        workout.image_url,
-        caption
       );
 
       const status = result.success ? 'sent' : 'failed';
@@ -486,18 +477,10 @@ export async function sendTestMessage(req, res) {
         });
       }
 
-      const reminderTemplateName = language === 'es'
-        ? (process.env.WHATSAPP_REMINDER_TEMPLATE_NAME_ES || 'sesion_ejercicio_semanal')
-        : (process.env.WHATSAPP_REMINDER_TEMPLATE_NAME_EN || 'weekly_exercise_reminder');
-      await sendWhatsAppReminderTemplate(
-        phoneNumber,
-        reminderTemplateName,
-        { title: workout.title, youtube_url: language === 'es' ? 'Responde *Listo* cuando termines.' : 'Reply *Done* when you finish.' },
-        language
-      );
-
-      const caption = getWorkoutCaption(workout, language);
-      const result = await sendWhatsAppImageMessage(phoneNumber, workout.image_url, caption);
+      const workoutTemplateName = language === 'es'
+        ? (process.env.WHATSAPP_WORKOUT_TEMPLATE_NAME_ES || 'imagen_ejercicio_semanal')
+        : (process.env.WHATSAPP_WORKOUT_TEMPLATE_NAME_EN || 'workout_image_weekly');
+      const result = await sendWorkoutImageTemplate(phoneNumber, workoutTemplateName, workout, language);
 
       const senior = await getSeniorByPhone(phoneNumber);
       if (senior) {

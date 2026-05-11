@@ -193,7 +193,6 @@ export async function logReply(seniorId, replyText, isCompletion = false) {
 }
 
 export async function getCompletionStreak(seniorId) {
-  // Only count logs from the weekly model onward to avoid inflated streaks
   const WEEKLY_MODEL_START = '2026-02-08T00:00:00Z';
 
   const { data, error } = await supabase
@@ -203,17 +202,31 @@ export async function getCompletionStreak(seniorId) {
     .gte('sent_at', WEEKLY_MODEL_START)
     .in('type', ['video', 'workout'])
     .order('sent_at', { ascending: false })
-    .limit(52);
+    .limit(104);
 
   if (error || !data) return 0;
 
-  let streak = 0;
+  // Group by calendar week — a week is complete if ANY log in it is completed.
+  // This handles multiple test sends or retries within the same week.
+  const weekMap = new Map();
   for (const log of data) {
-    if (log.completed) {
-      streak++;
-    } else {
-      break;
+    const date = new Date(log.sent_at);
+    date.setUTCDate(date.getUTCDate() - date.getUTCDay()); // rewind to Sunday
+    date.setUTCHours(0, 0, 0, 0);
+    const weekKey = date.toISOString();
+    if (!weekMap.has(weekKey)) {
+      weekMap.set(weekKey, log.completed);
+    } else if (log.completed) {
+      weekMap.set(weekKey, true);
     }
+  }
+
+  const weeks = [...weekMap.entries()].sort((a, b) => b[0].localeCompare(a[0]));
+
+  let streak = 0;
+  for (const [, completed] of weeks) {
+    if (completed) streak++;
+    else break;
   }
   return streak;
 }

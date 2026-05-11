@@ -351,9 +351,12 @@ export function parseIncomingMessage(body) {
     const message = value.messages[0];
     const contact = value.contacts?.[0];
 
-    const buttonText = message.type === 'interactive'
-      ? message.interactive?.button_reply?.title || ''
-      : '';
+    // Template quick reply buttons → type: 'button', text in button.text
+    // Interactive message buttons → type: 'interactive', text in interactive.button_reply.title
+    const buttonText =
+      message.type === 'button' ? message.button?.text || '' :
+      message.type === 'interactive' ? message.interactive?.button_reply?.title || '' :
+      '';
 
     return {
       from: message.from,

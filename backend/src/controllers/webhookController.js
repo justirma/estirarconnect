@@ -90,8 +90,8 @@ export async function handleIncomingMessage(req, res) {
     }
 
     // Ignore non-text messages (reactions, images, audio, etc.) — no nudge
-    // Allow 'interactive' through — that's a quick reply button tap (e.g. "Done")
-    if (messageData.type !== 'text' && messageData.type !== 'interactive') {
+    // Allow 'button' (template quick reply) and 'interactive' (interactive msg reply) through
+    if (!['text', 'button', 'interactive'].includes(messageData.type)) {
       console.log(`Ignored non-text message (type: ${messageData.type}) from ${messageData.from}`);
       return res.sendStatus(200);
     }

@@ -1,5 +1,6 @@
 import { verifyWebhook, verifyWebhookSignature, parseIncomingMessage, sendWhatsAppMessage } from '../services/whatsapp.js';
-import { getSeniorByPhone, logReply, logWorkoutReply, getCompletionStreak, deactivateSenior, reactivateSenior } from '../services/database.js';
+import { getSeniorByPhone, logReply, logWorkoutReply, getCompletionStreak, deactivateSenior, reactivateSenior, getThisWeeksLog, getThisWeeksWorkoutLog } from '../services/database.js';
+import { generateSeniorReply } from '../services/claude.js';
 
 const USE_WORKOUT_IMAGES = process.env.USE_WORKOUT_IMAGES === 'true';
 import { getPostHog } from '../config/posthog.js';
@@ -166,14 +167,49 @@ export async function handleIncomingMessage(req, res) {
       if (posthog) posthog.capture({ distinctId: senior.id, event: 'exercise_completed', properties: { language: senior.language, streak } });
       console.log(`Completion logged for senior ${senior.id} (streak: ${streak})`);
     } else {
-      const nudge = senior.language === 'es'
-        ? '¡Gracias por tu mensaje! Si ya terminaste el ejercicio, escribe *Listo* y lo marcaremos como completado 😊'
-        : 'Thanks for your message! If you\'ve finished the exercise, reply *Done* and we\'ll mark it complete 😊';
-      const nudgeResult = await sendWhatsAppMessage(senior.phone_number, nudge);
-      if (!nudgeResult.success) {
-        console.warn(`Failed to send nudge to senior ${senior.id}:`, nudgeResult.error);
+      // Unrecognized message — ask Claude to reply intelligently instead of a static nudge.
+      // We look up this week's workout title so Claude has context ("you asked about X...").
+      let replyMessage;
+
+      try {
+        const weekLog = USE_WORKOUT_IMAGES
+          ? await getThisWeeksWorkoutLog(senior.id)
+          : await getThisWeeksLog(senior.id);
+        const workoutTitle = weekLog?.workouts?.title || weekLog?.videos?.title || null;
+
+        const aiReply = await generateSeniorReply(replyText, senior.language, workoutTitle);
+        replyMessage = aiReply.response;
+
+        // Cost tracking: log tokens so PostHog can show you spend over time.
+        // Haiku ~$0.25/M input + $1.25/M output — roughly $0.001 per exchange.
+        console.log(`AI reply to senior ${senior.id} — topic: ${aiReply.topic}, tokens in:${aiReply.inputTokens} out:${aiReply.outputTokens}`);
+
+        if (posthog) {
+          posthog.capture({
+            distinctId: senior.id,
+            event: 'ai_reply_sent',
+            properties: {
+              language: senior.language,
+              topic: aiReply.topic,
+              input_tokens: aiReply.inputTokens,
+              output_tokens: aiReply.outputTokens
+            }
+          });
+        }
+      } catch (err) {
+        // Claude failed (API error, bad JSON, missing key) — fall back to static nudge.
+        // The senior always gets a reply either way.
+        console.error('Claude API error, falling back to nudge:', err.message);
+        replyMessage = senior.language === 'es'
+          ? '¡Gracias por tu mensaje! Si ya terminaste el ejercicio, escribe *Listo* y lo marcaremos como completado 😊'
+          : 'Thanks for your message! If you\'ve finished the exercise, reply *Done* and we\'ll mark it complete 😊';
       }
-      console.log(`Reply logged for senior ${senior.id}: ${replyText}`);
+
+      const replyResult = await sendWhatsAppMessage(senior.phone_number, replyMessage);
+      if (!replyResult.success) {
+        console.warn(`Failed to send reply to senior ${senior.id}:`, replyResult.error);
+      }
+      console.log(`Reply sent to senior ${senior.id}: ${replyText}`);
     }
 
     return res.sendStatus(200);

@@ -148,37 +148,21 @@ export async function handleIncomingMessage(req, res) {
       return res.sendStatus(200);
     }
 
-    const completed = isCompletion(replyText);
+    let completed = isCompletion(replyText);
+    let aiReply = null;
 
-    // Log the reply (use workout logger if in workout mode)
-    if (USE_WORKOUT_IMAGES) {
-      await logWorkoutReply(senior.id, replyText, completed);
-    } else {
-      await logReply(senior.id, replyText, completed);
-    }
-
-    if (completed) {
-      const streak = await getCompletionStreak(senior.id);
-      const message = getCompletionMessage(senior.language, streak);
-      const ackResult = await sendWhatsAppMessage(senior.phone_number, message);
-      if (!ackResult.success) {
-        console.warn(`Failed to send completion ACK to senior ${senior.id}:`, ackResult.error);
-      }
-      if (posthog) posthog.capture({ distinctId: senior.id, event: 'exercise_completed', properties: { language: senior.language, streak } });
-      console.log(`Completion logged for senior ${senior.id} (streak: ${streak})`);
-    } else {
-      // Unrecognized message — ask Claude to reply intelligently instead of a static nudge.
-      // We look up this week's workout title so Claude has context ("you asked about X...").
-      let replyMessage;
-
+    // Unrecognized by the static keyword list — ask Claude to interpret it. Claude also
+    // classifies whether the message itself means "I finished" in phrasing the keyword
+    // list doesn't catch (e.g. "I did it!", "ya hice mis ejercicios hoy").
+    if (!completed) {
       try {
         const weekLog = USE_WORKOUT_IMAGES
           ? await getThisWeeksWorkoutLog(senior.id)
           : await getThisWeeksLog(senior.id);
         const workoutTitle = weekLog?.workouts?.title || weekLog?.videos?.title || null;
 
-        const aiReply = await generateSeniorReply(replyText, senior.language, workoutTitle);
-        replyMessage = aiReply.response;
+        aiReply = await generateSeniorReply(replyText, senior.language, workoutTitle);
+        completed = aiReply.isCompletion;
 
         // Cost tracking: log tokens so PostHog can show you spend over time.
         // Haiku ~$0.25/M input + $1.25/M output — roughly $0.001 per exchange.
@@ -200,10 +184,32 @@ export async function handleIncomingMessage(req, res) {
         // Claude failed (API error, bad JSON, missing key) — fall back to static nudge.
         // The senior always gets a reply either way.
         console.error('Claude API error, falling back to nudge:', err.message);
-        replyMessage = senior.language === 'es'
-          ? '¡Gracias por tu mensaje! Si ya terminaste el ejercicio, escribe *Listo* y lo marcaremos como completado 😊'
-          : 'Thanks for your message! If you\'ve finished the exercise, reply *Done* and we\'ll mark it complete 😊';
       }
+    }
+
+    // Log the reply (use workout logger if in workout mode)
+    if (USE_WORKOUT_IMAGES) {
+      await logWorkoutReply(senior.id, replyText, completed);
+    } else {
+      await logReply(senior.id, replyText, completed);
+    }
+
+    if (completed) {
+      const streak = await getCompletionStreak(senior.id);
+      const message = getCompletionMessage(senior.language, streak);
+      const ackResult = await sendWhatsAppMessage(senior.phone_number, message);
+      if (!ackResult.success) {
+        console.warn(`Failed to send completion ACK to senior ${senior.id}:`, ackResult.error);
+      }
+      if (posthog) posthog.capture({ distinctId: senior.id, event: 'exercise_completed', properties: { language: senior.language, streak } });
+      console.log(`Completion logged for senior ${senior.id} (streak: ${streak})`);
+    } else {
+      // aiReply is null only if Claude's call itself failed — fall back to a static nudge.
+      const replyMessage = aiReply
+        ? aiReply.response
+        : (senior.language === 'es'
+          ? '¡Gracias por tu mensaje! Si ya terminaste el ejercicio, escribe *Listo* y lo marcaremos como completado 😊'
+          : 'Thanks for your message! If you\'ve finished the exercise, reply *Done* and we\'ll mark it complete 😊');
 
       const replyResult = await sendWhatsAppMessage(senior.phone_number, replyMessage);
       if (!replyResult.success) {

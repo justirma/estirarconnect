@@ -505,6 +505,85 @@ export async function getAllWorkouts() {
   return data;
 }
 
+export async function getDashboardStats() {
+  const { data: logs, error: logsError } = await supabase
+    .from('logs')
+    .select('sent_at, completed, type, senior_id')
+    .in('type', ['video', 'workout'])
+    .order('sent_at', { ascending: true });
+
+  if (logsError) {
+    console.error('Error fetching stats logs:', logsError);
+    throw logsError;
+  }
+
+  const { data: seniors, error: seniorsError } = await supabase
+    .from('seniors')
+    .select('id, active');
+
+  if (seniorsError) {
+    console.error('Error fetching stats seniors:', seniorsError);
+    throw seniorsError;
+  }
+
+  const monthMap = new Map();
+  for (const log of logs) {
+    const d = new Date(log.sent_at);
+    const key = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
+    if (!monthMap.has(key)) {
+      monthMap.set(key, { month: key, sent: 0, completed: 0, seniors: new Set() });
+    }
+    const entry = monthMap.get(key);
+    entry.sent++;
+    if (log.completed) entry.completed++;
+    entry.seniors.add(log.senior_id);
+  }
+
+  const monthly = [...monthMap.values()]
+    .sort((a, b) => b.month.localeCompare(a.month))
+    .map(m => ({
+      month: m.month,
+      sent: m.sent,
+      completed: m.completed,
+      completionRate: m.sent ? Math.round((m.completed / m.sent) * 100) : 0,
+      activeSeniors: m.seniors.size
+    }));
+
+  const now = new Date();
+  const currentMonthKey = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}`;
+  const currentMonth = monthly.find(m => m.month === currentMonthKey) || {
+    month: currentMonthKey, sent: 0, completed: 0, completionRate: 0, activeSeniors: 0
+  };
+
+  const currentYear = now.getUTCFullYear();
+  const currentMonthNum = now.getUTCMonth() + 1;
+  const weekOfMonth = Math.ceil(now.getUTCDate() / 7);
+
+  const { data: currentWorkout, error: workoutError } = await supabase
+    .from('workouts')
+    .select('title, theme, month, year, week_number')
+    .eq('language', 'en')
+    .eq('active', true)
+    .eq('year', currentYear)
+    .eq('month', currentMonthNum)
+    .eq('week_number', weekOfMonth)
+    .limit(1)
+    .single();
+
+  if (workoutError && workoutError.code !== 'PGRST116') {
+    console.error('Error fetching current workout for stats:', workoutError);
+  }
+
+  return {
+    currentMonth: currentMonthKey,
+    currentWeekOfMonth: weekOfMonth,
+    currentProgram: currentWorkout || null,
+    totalSeniors: seniors.length,
+    activeSeniors: seniors.filter(s => s.active).length,
+    monthly
+  };
+}
+
 export async function getWorkoutBySequence(language, sequenceOrder = 1) {
   const { data, error } = await supabase
     .from('workouts')

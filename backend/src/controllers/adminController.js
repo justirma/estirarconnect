@@ -1,4 +1,4 @@
-import { getRecentLogsWithDetails, getSeniorByPhone, logReply, getCompletionStreak, getActiveSeniors, insertSenior } from '../services/database.js';
+import { getRecentLogsWithDetails, getSeniorByPhone, logReply, getCompletionStreak, getActiveSeniors, insertSenior, getDashboardStats } from '../services/database.js';
 import { sendWhatsAppMessage, sendWelcomeTemplate } from '../services/whatsapp.js';
 
 export async function getRecentLogs(req, res) {
@@ -119,6 +119,16 @@ export async function getSeniors(req, res) {
   }
 }
 
+export async function getStats(req, res) {
+  try {
+    const stats = await getDashboardStats();
+    return res.json({ success: true, stats });
+  } catch (error) {
+    console.error('Error fetching stats:', error);
+    return res.status(500).json({ success: false, error: error.message });
+  }
+}
+
 export function serveAdminDashboard(req, res) {
   const html = `<!DOCTYPE html>
 <html lang="en">
@@ -175,6 +185,16 @@ export function serveAdminDashboard(req, res) {
     .form-field label { font-size: 11px; font-weight: 600; color: #666; text-transform: uppercase; }
     .form-field input, .form-field select { padding: 9px 12px; border: 1px solid #ddd; border-radius: 8px; font-size: 14px; min-width: 160px; }
     .form-field input:focus, .form-field select:focus { outline: none; border-color: #25d366; }
+    /* Tabs */
+    .tabs { display: flex; gap: 4px; margin-bottom: 20px; border-bottom: 2px solid #dee2e6; }
+    .tab-btn { background: none; border: none; padding: 10px 18px; font-size: 14px; font-weight: 600; color: #666; cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -2px; }
+    .tab-btn.active { color: #075e54; border-bottom-color: #075e54; }
+    /* Stat cards */
+    .stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 16px; margin-bottom: 24px; }
+    .stat-card { background: white; border-radius: 8px; padding: 18px 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+    .stat-card .stat-label { font-size: 11px; text-transform: uppercase; color: #999; font-weight: 600; margin-bottom: 6px; }
+    .stat-card .stat-value { font-size: 26px; font-weight: 700; color: #1a1a1a; }
+    .stat-card .stat-sub { font-size: 12px; color: #999; margin-top: 4px; }
   </style>
 </head>
 <body>
@@ -200,6 +220,12 @@ export function serveAdminDashboard(req, res) {
   <!-- Dashboard view -->
   <div id="dashboardView" style="display:none">
     <div class="container">
+      <div class="tabs">
+        <button class="tab-btn active" id="opsTabBtn" onclick="showTab('ops')">Operations</button>
+        <button class="tab-btn" id="analyticsTabBtn" onclick="showTab('analytics')">Analytics</button>
+      </div>
+
+      <div id="opsTab">
       <div class="actions">
         <button class="btn" id="sendTestBtn" onclick="sendTestMessage()">Send Test Message</button>
         <button class="btn btn-secondary" id="processReplyBtn" onclick="processReplyAction()">Process Reply</button>
@@ -268,6 +294,47 @@ export function serveAdminDashboard(req, res) {
           <tr><td colspan="8" class="empty">Loading...</td></tr>
         </tbody>
       </table>
+      </div>
+
+      <div id="analyticsTab" style="display:none">
+        <div class="stat-grid">
+          <div class="stat-card">
+            <div class="stat-label">Current Month</div>
+            <div class="stat-value" id="statCurrentMonth">—</div>
+            <div class="stat-sub" id="statCurrentProgram"></div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Active Seniors</div>
+            <div class="stat-value" id="statActiveSeniors">—</div>
+            <div class="stat-sub" id="statTotalSeniors"></div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Sent This Month</div>
+            <div class="stat-value" id="statSentThisMonth">—</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Completion Rate</div>
+            <div class="stat-value" id="statCompletionRate">—</div>
+            <div class="stat-sub" id="statCompletedCount"></div>
+          </div>
+        </div>
+
+        <div class="section-title">Monthly Breakdown</div>
+        <table class="log-table" style="margin-top:12px;">
+          <thead>
+            <tr>
+              <th>Month</th>
+              <th>Sent</th>
+              <th>Completed</th>
+              <th>Completion %</th>
+              <th>Active Seniors</th>
+            </tr>
+          </thead>
+          <tbody id="monthlyBody">
+            <tr><td colspan="5" class="empty">Loading...</td></tr>
+          </tbody>
+        </table>
+      </div>
     </div>
   </div>
 
@@ -296,6 +363,61 @@ export function serveAdminDashboard(req, res) {
       document.getElementById('dashboardView').style.display = 'block';
       fetchSeniors();
       fetchLogs();
+    }
+
+    function showTab(tab) {
+      document.getElementById('opsTab').style.display = tab === 'ops' ? 'block' : 'none';
+      document.getElementById('analyticsTab').style.display = tab === 'analytics' ? 'block' : 'none';
+      document.getElementById('opsTabBtn').classList.toggle('active', tab === 'ops');
+      document.getElementById('analyticsTabBtn').classList.toggle('active', tab === 'analytics');
+      if (tab === 'analytics') fetchStats();
+    }
+
+    function formatMonthLabel(monthKey) {
+      const [year, month] = monthKey.split('-');
+      const d = new Date(Date.UTC(Number(year), Number(month) - 1, 1));
+      return d.toLocaleString('en-US', { month: 'long', year: 'numeric', timeZone: 'UTC' });
+    }
+
+    async function fetchStats() {
+      try {
+        const res = await fetch('/admin/api/stats', { headers: apiHeaders() });
+        if (res.status === 401) { showLogin(); return; }
+        const data = await res.json();
+        if (!data.success) return;
+
+        const stats = data.stats;
+        document.getElementById('statCurrentMonth').textContent = formatMonthLabel(stats.currentMonth);
+        document.getElementById('statCurrentProgram').textContent = stats.currentProgram
+          ? 'Week ' + stats.currentWeekOfMonth + ' — ' + esc(stats.currentProgram.title || stats.currentProgram.theme || '')
+          : 'No active program for this week';
+
+        document.getElementById('statActiveSeniors').textContent = stats.activeSeniors;
+        document.getElementById('statTotalSeniors').textContent = stats.totalSeniors + ' total all-time';
+
+        const currentMonthStats = stats.monthly.find(m => m.month === stats.currentMonth) || { sent: 0, completed: 0, completionRate: 0 };
+        document.getElementById('statSentThisMonth').textContent = currentMonthStats.sent;
+        document.getElementById('statCompletionRate').textContent = currentMonthStats.completionRate + '%';
+        document.getElementById('statCompletedCount').textContent = currentMonthStats.completed + ' completed';
+
+        const tbody = document.getElementById('monthlyBody');
+        if (!stats.monthly || stats.monthly.length === 0) {
+          tbody.innerHTML = '<tr><td colspan="5" class="empty">No data yet</td></tr>';
+          return;
+        }
+
+        tbody.innerHTML = stats.monthly.map(m =>
+          '<tr>' +
+          '<td><strong>' + formatMonthLabel(m.month) + '</strong></td>' +
+          '<td>' + m.sent + '</td>' +
+          '<td>' + m.completed + '</td>' +
+          '<td>' + m.completionRate + '%</td>' +
+          '<td>' + m.activeSeniors + '</td>' +
+          '</tr>'
+        ).join('');
+      } catch (err) {
+        console.error('Failed to fetch stats:', err);
+      }
     }
 
     async function login() {

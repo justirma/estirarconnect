@@ -48,9 +48,9 @@ function getWorkoutCaption(workout, language) {
 
 function getWorkoutReminderMessage(workout, language) {
   if (language === 'es') {
-    return `Hola, un recordatorio amistoso de tu ejercicio de esta semana: *${workout.title}*\n\nResponde *Listo* cuando termines. ¡Tú puedes! 💪`;
+    return `Hola, un recordatorio amistoso de tu ejercicio de esta semana: *${workout.title}*\n\n¿Ya lo hiciste hoy? Solo toma 5 minutos — inténtalo de nuevo. Responde *Listo* cuando termines. ¡Tú puedes! 💪`;
   }
-  return `Hi there, a friendly reminder about this week's workout: *${workout.title}*\n\nReply *Done* when you finish. You've got this! 💪`;
+  return `Hi there, a friendly reminder about this week's workout: *${workout.title}*\n\nHaven't done it today? It only takes 5 minutes — give it another go. Reply *Done* when you finish. You've got this! 💪`;
 }
 
 async function sendSundayWorkouts(req, res) {

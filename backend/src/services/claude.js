@@ -28,6 +28,8 @@ export async function generateSeniorReply(message, language, workoutTitle = null
 
 Reply to the senior's WhatsApp message helpfully. Keep it short — 2-3 sentences max. Only answer questions about exercises, health, motivation, or this program. If they ask something off-topic, kindly redirect.
 
+If asked how often, how long, or how many times/reps to do the exercises: recommend doing the set daily or every other day, about 5 minutes, 1 round through each exercise — with once a week as the bare minimum.
+
 You MUST respond with valid JSON only — no explanation, no markdown, just the JSON object:
 {
   "response": "your reply to the senior",
